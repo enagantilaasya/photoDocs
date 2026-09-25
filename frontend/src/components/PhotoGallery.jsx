@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import ImageLightbox from './ImageLightbox';
 import { Maximize2, Camera } from 'lucide-react';
+import { getSafeImageUrl, DEFAULT_PHOTO_PLACEHOLDER } from '../utils/imageUrl';
 
 const PhotoGallery = ({ photos = [], title = 'Photographs' }) => {
   const [lightboxOpen, setLightboxOpen] = useState(false);
@@ -25,14 +26,18 @@ const PhotoGallery = ({ photos = [], title = 'Photographs' }) => {
 
   return (
     <div className="space-y-4">
-      {/* Featured Primary Photo if more than 1 photo */}
+      {/* Featured Primary Photo */}
       <div className="relative group overflow-hidden rounded-2xl bg-slate-900 shadow-md">
         <img
-          src={primaryPhoto.url}
+          src={getSafeImageUrl(primaryPhoto.url)}
           alt={primaryPhoto.originalName || `${title} 1`}
           className="w-full h-80 sm:h-96 md:h-[480px] object-cover group-hover:scale-102 transition-transform duration-500 cursor-pointer"
           onClick={() => openLightbox(0)}
           loading="lazy"
+          onError={(e) => {
+            e.currentTarget.onerror = null;
+            e.currentTarget.src = DEFAULT_PHOTO_PLACEHOLDER;
+          }}
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none flex items-end justify-between p-4 sm:p-6 text-white">
           <div>
@@ -65,10 +70,14 @@ const PhotoGallery = ({ photos = [], title = 'Photographs' }) => {
                 onClick={() => openLightbox(actualIndex)}
               >
                 <img
-                  src={photo.url}
+                  src={getSafeImageUrl(photo.url)}
                   alt={photo.originalName || `${title} ${actualIndex + 1}`}
                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                   loading="lazy"
+                  onError={(e) => {
+                    e.currentTarget.onerror = null;
+                    e.currentTarget.src = DEFAULT_PHOTO_PLACEHOLDER;
+                  }}
                 />
                 <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white">
                   <span className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 bg-black/60 backdrop-blur-xs rounded-full">

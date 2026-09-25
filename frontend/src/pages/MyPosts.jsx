@@ -14,6 +14,7 @@ import {
   XCircle,
   FileText
 } from 'lucide-react';
+import { getSafeImageUrl, DEFAULT_PHOTO_PLACEHOLDER } from '../utils/imageUrl';
 
 const MyPosts = () => {
   const [posts, setPosts] = useState([]);
@@ -113,9 +114,14 @@ const MyPosts = () => {
                 <div className="relative w-full md:w-36 h-36 md:h-24 rounded-xl overflow-hidden bg-slate-100 flex-shrink-0 border border-slate-200">
                   {thumbnail ? (
                     <img
-                      src={thumbnail}
+                      src={getSafeImageUrl(thumbnail)}
                       alt={post.title}
                       className="w-full h-full object-cover"
+                      loading="lazy"
+                      onError={(e) => {
+                        e.currentTarget.onerror = null;
+                        e.currentTarget.src = DEFAULT_PHOTO_PLACEHOLDER;
+                      }}
                     />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-slate-400">

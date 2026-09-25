@@ -1,6 +1,7 @@
 const cloudinary = require('cloudinary').v2;
 const fs = require('fs');
 const path = require('path');
+const ImageFile = require('../models/ImageFile');
 
 // Configure Cloudinary if credentials are provided
 const isCloudinaryConfigured = Boolean(
@@ -19,30 +20,55 @@ if (isCloudinaryConfigured) {
   });
   console.log('[Cloudinary] Configured with cloud name:', process.env.CLOUDINARY_CLOUD_NAME);
 } else {
-  console.log('[Storage] Cloudinary credentials not detected or using placeholder; local upload active.');
+  console.log('[Storage] Cloudinary credentials not detected or using placeholder; persistent DB storage active.');
 }
 
 /**
- * Save an image to local uploads directory
+ * Save an image to MongoDB Atlas (guaranteed persistence across Render restarts)
+ * and optionally local disk for caching
  */
-const saveLocalImage = async (buffer, file, baseUrl = '') => {
-  const uploadsDir = path.join(__dirname, '..', 'uploads');
-  if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir, { recursive: true });
-  }
-
+const savePersistentImage = async (buffer, file, baseUrl = '') => {
   const fileExt = path.extname(file.originalname).toLowerCase() || '.jpg';
   const uniqueName = `photo-${Date.now()}-${Math.round(Math.random() * 1e9)}${fileExt}`;
-  const filePath = path.join(uploadsDir, uniqueName);
 
-  await fs.promises.writeFile(filePath, buffer);
+  // 1. Always save into MongoDB Atlas for durable cloud persistence
+  let imageDoc;
+  try {
+    imageDoc = await ImageFile.create({
+      filename: uniqueName,
+      contentType: file.mimetype || 'image/jpeg',
+      data: buffer,
+      size: buffer.length
+    });
+  } catch (dbErr) {
+    console.warn('[Storage] Could not save to ImageFile collection:', dbErr.message);
+  }
 
-  // If baseUrl is provided, use it; otherwise use relative path /uploads/... which works via Vite proxy
-  const cleanBase = baseUrl ? baseUrl.replace(/\/+$/, '') : '';
-  const url = cleanBase ? `${cleanBase}/uploads/${uniqueName}` : `/uploads/${uniqueName}`;
+  // 2. Also write to local disk cache if filesystem is writable
+  try {
+    const uploadsDir = path.join(__dirname, '..', 'uploads');
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+    }
+    const filePath = path.join(uploadsDir, uniqueName);
+    await fs.promises.writeFile(filePath, buffer);
+  } catch (fsErr) {
+    // Ignore read-only container disk errors
+  }
+
+  // Normalize base URL
+  let cleanBase = baseUrl ? baseUrl.replace(/\/+$/, '') : '';
+  if (cleanBase.includes('onrender.com') && cleanBase.startsWith('http://')) {
+    cleanBase = cleanBase.replace('http://', 'https://');
+  }
+
+  // Return durable image URL
+  const url = imageDoc
+    ? (cleanBase ? `${cleanBase}/api/posts/images/${imageDoc._id}` : `/api/posts/images/${imageDoc._id}`)
+    : (cleanBase ? `${cleanBase}/uploads/${uniqueName}` : `/uploads/${uniqueName}`);
 
   return {
-    publicId: `local/${uniqueName}`,
+    publicId: imageDoc ? `db/${imageDoc._id}` : `local/${uniqueName}`,
     url: url,
     originalName: file.originalname,
     format: fileExt.replace('.', '') || 'jpg',
@@ -89,31 +115,35 @@ const uploadImageBuffer = async (buffer, file, baseUrl = '') => {
       };
     } catch (cloudinaryError) {
       console.warn(
-        `[Cloudinary Warning] Cloudinary upload returned error (${cloudinaryError.message || cloudinaryError.http_code}). Falling back to local storage to ensure upload succeeds.`
+        `[Cloudinary Warning] Cloudinary upload returned error (${cloudinaryError.message || cloudinaryError.http_code}). Using resilient MongoDB Atlas storage.`
       );
-      // Resilient fallback to local storage
-      return await saveLocalImage(buffer, file, baseUrl);
+      return await savePersistentImage(buffer, file, baseUrl);
     }
   }
 
-  // Fallback: Local storage in /uploads directory
-  return await saveLocalImage(buffer, file, baseUrl);
+  // Fallback: Persistent storage
+  return await savePersistentImage(buffer, file, baseUrl);
 };
 
 /**
- * Delete image from Cloudinary or local storage
+ * Delete image from Cloudinary, MongoDB, or local storage
  * @param {string} publicId
  */
 const deleteImage = async (publicId) => {
   try {
-    if (isCloudinaryConfigured && !publicId.startsWith('local/')) {
-      await cloudinary.uploader.destroy(publicId);
+    if (!publicId) return;
+
+    if (publicId.startsWith('db/')) {
+      const id = publicId.replace('db/', '');
+      await ImageFile.findByIdAndDelete(id);
     } else if (publicId.startsWith('local/')) {
       const fileName = publicId.replace('local/', '');
       const filePath = path.join(__dirname, '..', 'uploads', fileName);
       if (fs.existsSync(filePath)) {
         await fs.promises.unlink(filePath);
       }
+    } else if (isCloudinaryConfigured) {
+      await cloudinary.uploader.destroy(publicId);
     }
   } catch (error) {
     console.error(`[Storage] Failed to delete image ${publicId}:`, error.message);

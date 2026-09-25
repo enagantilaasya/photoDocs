@@ -2,6 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { Calendar, Clock, User, FileText, ArrowRight, Images } from 'lucide-react';
 import { getDownloadReportUrl } from '../services/api';
+import { getSafeImageUrl, DEFAULT_PHOTO_PLACEHOLDER } from '../utils/imageUrl';
 
 const PostCard = ({ post }) => {
   if (!post) return null;
@@ -62,10 +63,14 @@ const PostCard = ({ post }) => {
                   className="relative aspect-4/3 overflow-hidden bg-slate-100 group/img block"
                 >
                   <img
-                    src={photo.url}
+                    src={getSafeImageUrl(photo.url)}
                     alt={photo.originalName || `${post.title} photo ${index + 1}`}
                     className="w-full h-full object-cover group-hover/img:scale-105 transition-transform duration-300"
                     loading="lazy"
+                    onError={(e) => {
+                      e.currentTarget.onerror = null;
+                      e.currentTarget.src = DEFAULT_PHOTO_PLACEHOLDER;
+                    }}
                   />
                   {isLastWithOverlay && (
                     <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-xs flex flex-col items-center justify-center text-white p-2">

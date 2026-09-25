@@ -17,6 +17,7 @@ import {
   Sparkles,
   Camera
 } from 'lucide-react';
+import { getSafeImageUrl, DEFAULT_PHOTO_PLACEHOLDER } from '../utils/imageUrl';
 
 const Dashboard = () => {
   const { user, logout } = useAuth();
@@ -223,9 +224,14 @@ const Dashboard = () => {
                 <div className="h-40 bg-slate-100 relative overflow-hidden">
                   {post.photos?.[0]?.url ? (
                     <img
-                      src={post.photos[0].url}
+                      src={getSafeImageUrl(post.photos[0].url)}
                       alt={post.title}
                       className="w-full h-full object-cover"
+                      loading="lazy"
+                      onError={(e) => {
+                        e.currentTarget.onerror = null;
+                        e.currentTarget.src = DEFAULT_PHOTO_PLACEHOLDER;
+                      }}
                     />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-slate-400">

@@ -18,6 +18,9 @@ const adminRoutes = require('./routes/adminRoutes');
 
 const app = express();
 
+// Trust reverse proxy (essential for Render HTTPS detection)
+app.set('trust proxy', 1);
+
 // Connect to MongoDB
 connectDB().then(() => {
   seedData();
@@ -57,6 +60,23 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Serve local upload files statically with CORS headers
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// Resilient fallback for /uploads/:filename if ephemeral container disk was recycled
+const ImageFile = require('./models/ImageFile');
+app.get('/uploads/:filename', async (req, res) => {
+  try {
+    const imageDoc = await ImageFile.findOne({ filename: req.params.filename });
+    if (imageDoc) {
+      res.setHeader('Content-Type', imageDoc.contentType || 'image/jpeg');
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      return res.send(imageDoc.data);
+    }
+  } catch (e) {
+    // proceed to redirect
+  }
+  // Graceful redirect to clean photography fallback if ephemeral file was erased
+  res.redirect('https://images.unsplash.com/photo-1516542076529-1ea3854896f2?w=1200&auto=format&fit=crop&q=80');
+});
 
 // API Routes
 app.use('/api/auth', authRoutes);

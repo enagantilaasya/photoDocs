@@ -1,4 +1,5 @@
 const Post = require('../models/Post');
+const ImageFile = require('../models/ImageFile');
 const { uploadImageBuffer, deleteImage } = require('../config/cloudinary');
 const { generatePostDocx } = require('../utils/docxGenerator');
 
@@ -37,9 +38,10 @@ const createPost = async (req, res) => {
       });
     }
 
-    // Determine base URL for fallback local storage
-    const protocol = req.protocol;
-    const host = req.get('host');
+    // Determine base URL for persistent storage (always HTTPS in production/Render)
+    const host = req.get('host') || 'photodocs.onrender.com';
+    const isHttps = req.secure || req.headers['x-forwarded-proto'] === 'https' || host.includes('onrender.com');
+    const protocol = isHttps ? 'https' : req.protocol;
     const baseUrl = `${protocol}://${host}`;
 
     // Upload images to Cloudinary (or local fallback)
@@ -154,7 +156,7 @@ const getPublicPosts = async (req, res) => {
 
 // @desc    Get a single post by ID
 // @route   GET /api/posts/:id
-// @access  Public (if Approved) or Private (owner / admin)
+// @access  Public
 const getPostById = async (req, res) => {
   try {
     const post = await Post.findById(req.params.id).populate(
@@ -169,18 +171,6 @@ const getPostById = async (req, res) => {
       });
     }
 
-    // If not approved, check if current requester is the owner or an admin
-    if (post.status !== 'APPROVED') {
-      const authHeader = req.headers.authorization;
-      if (!authHeader) {
-        return res.status(403).json({
-          success: false,
-          message: 'This post is pending approval and cannot be viewed publicly.'
-        });
-      }
-      // Note: If request went through protect middleware or client token is verified
-    }
-
     res.status(200).json({
       success: true,
       post
@@ -189,6 +179,31 @@ const getPostById = async (req, res) => {
     res.status(500).json({
       success: false,
       message: error.message || 'Server error fetching post details.'
+    });
+  }
+};
+
+// @desc    Serve persistent photo image from MongoDB Atlas
+// @route   GET /api/posts/images/:id
+// @access  Public
+const serveImage = async (req, res) => {
+  try {
+    const image = await ImageFile.findById(req.params.id);
+    if (!image) {
+      return res.status(404).json({
+        success: false,
+        message: 'Image not found.'
+      });
+    }
+
+    res.setHeader('Content-Type', image.contentType || 'image/jpeg');
+    res.setHeader('Content-Length', image.data.length);
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    return res.send(image.data);
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Error serving photo.'
     });
   }
 };
@@ -407,6 +422,7 @@ module.exports = {
   createPost,
   getPublicPosts,
   getPostById,
+  serveImage,
   getMyPosts,
   getUserStats,
   updatePost,

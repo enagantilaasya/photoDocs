@@ -1,5 +1,6 @@
 import React, { useEffect, useCallback } from 'react';
 import { X, ChevronLeft, ChevronRight, Maximize2, Minimize2, Download } from 'lucide-react';
+import { getSafeImageUrl, DEFAULT_PHOTO_PLACEHOLDER } from '../utils/imageUrl';
 
 const ImageLightbox = ({
   photos = [],
@@ -122,10 +123,14 @@ const ImageLightbox = ({
       >
         <img
           key={currentPhoto?.url}
-          src={currentPhoto?.url}
+          src={getSafeImageUrl(currentPhoto?.url)}
           alt={currentPhoto?.originalName || 'Photo Preview'}
           className="max-h-[80vh] max-w-[90vw] object-contain rounded-lg shadow-2xl transition-transform duration-200 select-none animate-fadeIn"
           loading="lazy"
+          onError={(e) => {
+            e.currentTarget.onerror = null;
+            e.currentTarget.src = DEFAULT_PHOTO_PLACEHOLDER;
+          }}
         />
 
         {/* Previous Button */}
@@ -168,10 +173,14 @@ const ImageLightbox = ({
               }`}
             >
               <img
-                src={photo.url}
+                src={getSafeImageUrl(photo.url)}
                 alt=""
                 className="w-full h-full object-cover"
                 loading="lazy"
+                onError={(e) => {
+                  e.currentTarget.onerror = null;
+                  e.currentTarget.src = DEFAULT_PHOTO_PLACEHOLDER;
+                }}
               />
             </button>
           ))}

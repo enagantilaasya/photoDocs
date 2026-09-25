@@ -30,7 +30,8 @@ const PostDetails = () => {
 
   useEffect(() => {
     const loadPost = async () => {
-      setLoading(false);
+      setLoading(true);
+      setError('');
       try {
         const res = await fetchPostById(id);
         if (res.success && res.post) {

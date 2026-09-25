@@ -8,7 +8,8 @@ const {
   getUserStats,
   updatePost,
   deletePost,
-  downloadPostReport
+  downloadPostReport,
+  serveImage
 } = require('../controllers/postController');
 const { protect } = require('../middleware/authMiddleware');
 const { uploadPhotos } = require('../middleware/uploadMiddleware');
@@ -22,6 +23,9 @@ router.get('/user-stats', protect, getUserStats);
 
 // Word report download
 router.get('/:id/report', downloadPostReport);
+
+// Persistent photo retrieval by ImageFile ID
+router.get('/images/:id', serveImage);
 
 // Individual post retrieval
 router.get('/:id', getPostById);

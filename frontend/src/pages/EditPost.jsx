@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { fetchPostById, updatePostApi } from '../services/api';
 import { ArrowLeft, Save, AlertCircle, CheckCircle2, Calendar } from 'lucide-react';
+import { getSafeImageUrl, DEFAULT_PHOTO_PLACEHOLDER } from '../utils/imageUrl';
 
 const getLocalDatetimeString = (d = new Date()) => {
   const pad = (n) => String(n).padStart(2, '0');
@@ -171,9 +172,14 @@ const EditPost = () => {
               {post.photos.map((p, idx) => (
                 <img
                   key={idx}
-                  src={p.url}
+                  src={getSafeImageUrl(p.url)}
                   alt=""
                   className="w-16 h-16 object-cover rounded-lg border border-slate-300 flex-shrink-0"
+                  loading="lazy"
+                  onError={(e) => {
+                    e.currentTarget.onerror = null;
+                    e.currentTarget.src = DEFAULT_PHOTO_PLACEHOLDER;
+                  }}
                 />
               ))}
             </div>
