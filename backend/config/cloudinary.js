@@ -2,6 +2,7 @@ const cloudinary = require('cloudinary').v2;
 const fs = require('fs');
 const path = require('path');
 const ImageFile = require('../models/ImageFile');
+const VideoFile = require('../models/VideoFile');
 
 // Configure Cloudinary if credentials are provided
 const isCloudinaryConfigured = Boolean(
@@ -79,11 +80,60 @@ const savePersistentImage = async (buffer, file, baseUrl = '') => {
 };
 
 /**
+ * Save a video to MongoDB Atlas (guaranteed persistence) and optionally local disk
+ */
+const savePersistentVideo = async (buffer, file, baseUrl = '') => {
+  const fileExt = path.extname(file.originalname).toLowerCase() || '.mp4';
+  const uniqueName = `video-${Date.now()}-${Math.round(Math.random() * 1e9)}${fileExt}`;
+
+  // 1. Always save into MongoDB Atlas for durable cloud persistence
+  let videoDoc;
+  try {
+    videoDoc = await VideoFile.create({
+      filename: uniqueName,
+      contentType: file.mimetype || 'video/mp4',
+      data: buffer,
+      size: buffer.length
+    });
+  } catch (dbErr) {
+    console.warn('[Storage] Could not save to VideoFile collection:', dbErr.message);
+  }
+
+  // 2. Also write to local disk cache if filesystem is writable
+  try {
+    const uploadsDir = path.join(__dirname, '..', 'uploads');
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+    }
+    const filePath = path.join(uploadsDir, uniqueName);
+    await fs.promises.writeFile(filePath, buffer);
+  } catch (fsErr) {
+    // Ignore read-only container disk errors
+  }
+
+  // Normalize base URL
+  let cleanBase = baseUrl ? baseUrl.replace(/\/+$/, '') : '';
+  if (cleanBase.includes('onrender.com') && cleanBase.startsWith('http://')) {
+    cleanBase = cleanBase.replace('http://', 'https://');
+  }
+
+  // Return durable video URL
+  const url = videoDoc
+    ? (cleanBase ? `${cleanBase}/api/posts/videos/${videoDoc._id}` : `/api/posts/videos/${videoDoc._id}`)
+    : (cleanBase ? `${cleanBase}/uploads/${uniqueName}` : `/uploads/${uniqueName}`);
+
+  return {
+    publicId: videoDoc ? `db/video/${videoDoc._id}` : `local/${uniqueName}`,
+    url: url,
+    originalName: file.originalname,
+    format: fileExt.replace('.', '') || 'mp4',
+    bytes: buffer.length,
+    videoType: 'upload'
+  };
+};
+
+/**
  * Upload an image buffer to Cloudinary with automatic resilient fallback
- * @param {Buffer} buffer File buffer
- * @param {Object} file File info from Multer
- * @param {string} baseUrl Express base URL for fallback paths
- * @returns {Promise<Object>} Photo metadata object
  */
 const uploadImageBuffer = async (buffer, file, baseUrl = '') => {
   if (isCloudinaryConfigured) {
@@ -115,7 +165,7 @@ const uploadImageBuffer = async (buffer, file, baseUrl = '') => {
       };
     } catch (cloudinaryError) {
       console.warn(
-        `[Cloudinary Warning] Cloudinary upload returned error (${cloudinaryError.message || cloudinaryError.http_code}). Using resilient MongoDB Atlas storage.`
+        `[Cloudinary Warning] Cloudinary photo upload returned error (${cloudinaryError.message || cloudinaryError.http_code}). Using resilient MongoDB Atlas storage.`
       );
       return await savePersistentImage(buffer, file, baseUrl);
     }
@@ -126,14 +176,59 @@ const uploadImageBuffer = async (buffer, file, baseUrl = '') => {
 };
 
 /**
- * Delete image from Cloudinary, MongoDB, or local storage
+ * Upload a video buffer to Cloudinary with automatic resilient fallback
+ */
+const uploadVideoBuffer = async (buffer, file, baseUrl = '') => {
+  if (isCloudinaryConfigured) {
+    try {
+      const result = await new Promise((resolve, reject) => {
+        const uploadStream = cloudinary.uploader.upload_stream(
+          {
+            folder: 'public_video_gallery',
+            resource_type: 'video'
+          },
+          (error, res) => {
+            if (error) {
+              return reject(error);
+            }
+            resolve(res);
+          }
+        );
+        uploadStream.end(buffer);
+      });
+
+      return {
+        publicId: result.public_id,
+        url: result.secure_url,
+        originalName: file.originalname,
+        format: result.format || path.extname(file.originalname).replace('.', '') || 'mp4',
+        bytes: result.bytes || buffer.length,
+        videoType: 'upload'
+      };
+    } catch (cloudinaryError) {
+      console.warn(
+        `[Cloudinary Warning] Cloudinary video upload returned error (${cloudinaryError.message || cloudinaryError.http_code}). Using resilient MongoDB Atlas storage.`
+      );
+      return await savePersistentVideo(buffer, file, baseUrl);
+    }
+  }
+
+  // Fallback: Persistent video storage
+  return await savePersistentVideo(buffer, file, baseUrl);
+};
+
+/**
+ * Delete image/video from Cloudinary, MongoDB, or local storage
  * @param {string} publicId
  */
 const deleteImage = async (publicId) => {
   try {
     if (!publicId) return;
 
-    if (publicId.startsWith('db/')) {
+    if (publicId.startsWith('db/video/')) {
+      const id = publicId.replace('db/video/', '');
+      await VideoFile.findByIdAndDelete(id);
+    } else if (publicId.startsWith('db/')) {
       const id = publicId.replace('db/', '');
       await ImageFile.findByIdAndDelete(id);
     } else if (publicId.startsWith('local/')) {
@@ -146,7 +241,7 @@ const deleteImage = async (publicId) => {
       await cloudinary.uploader.destroy(publicId);
     }
   } catch (error) {
-    console.error(`[Storage] Failed to delete image ${publicId}:`, error.message);
+    console.error(`[Storage] Failed to delete media ${publicId}:`, error.message);
   }
 };
 
@@ -154,5 +249,7 @@ module.exports = {
   cloudinary,
   isCloudinaryConfigured,
   uploadImageBuffer,
-  deleteImage
+  uploadVideoBuffer,
+  deleteImage,
+  deleteMedia: deleteImage
 };

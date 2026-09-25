@@ -9,10 +9,11 @@ const {
   updatePost,
   deletePost,
   downloadPostReport,
-  serveImage
+  serveImage,
+  serveVideo
 } = require('../controllers/postController');
 const { protect } = require('../middleware/authMiddleware');
-const { uploadPhotos } = require('../middleware/uploadMiddleware');
+const { uploadMedia } = require('../middleware/uploadMiddleware');
 
 // Public route for approved gallery posts
 router.get('/', getPublicPosts);
@@ -27,11 +28,14 @@ router.get('/:id/report', downloadPostReport);
 // Persistent photo retrieval by ImageFile ID
 router.get('/images/:id', serveImage);
 
+// Persistent video streaming by VideoFile ID
+router.get('/videos/:id', serveVideo);
+
 // Individual post retrieval
 router.get('/:id', getPostById);
 
-// Post creation with multi-photo upload
-router.post('/', protect, uploadPhotos, createPost);
+// Post creation with optional photo and video upload
+router.post('/', protect, uploadMedia, createPost);
 
 // Edit & delete
 router.put('/:id', protect, updatePost);

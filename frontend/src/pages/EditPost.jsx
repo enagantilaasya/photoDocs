@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { fetchPostById, updatePostApi } from '../services/api';
-import { ArrowLeft, Save, AlertCircle, CheckCircle2, Calendar } from 'lucide-react';
+import { ArrowLeft, Save, AlertCircle, CheckCircle2, Calendar, Film } from 'lucide-react';
 import { getSafeImageUrl, DEFAULT_PHOTO_PLACEHOLDER } from '../utils/imageUrl';
 
 const getLocalDatetimeString = (d = new Date()) => {
@@ -181,6 +181,24 @@ const EditPost = () => {
                     e.currentTarget.src = DEFAULT_PHOTO_PLACEHOLDER;
                   }}
                 />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Existing videos preview note */}
+        {post?.videos?.length > 0 && (
+          <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl">
+            <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+              <Film className="w-3.5 h-3.5 text-indigo-600" />
+              Attached Videos ({post.videos.length})
+            </h4>
+            <div className="space-y-1 text-xs text-slate-600">
+              {post.videos.map((v, idx) => (
+                <div key={idx} className="flex items-center gap-2 truncate">
+                  <span className="font-semibold text-slate-700">#{idx + 1}</span>
+                  <span className="truncate text-slate-500">{v.originalName || v.url}</span>
+                </div>
               ))}
             </div>
           </div>

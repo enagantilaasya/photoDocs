@@ -3,6 +3,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import { fetchPostById, getDownloadReportUrl, deletePostApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import PhotoGallery from '../components/PhotoGallery';
+import VideoPlayer from '../components/VideoPlayer';
 import {
   Calendar,
   Clock,
@@ -14,7 +15,9 @@ import {
   AlertTriangle,
   Clock3,
   Edit,
-  Trash2
+  Trash2,
+  Film,
+  Camera
 } from 'lucide-react';
 
 const PostDetails = () => {
@@ -213,19 +216,52 @@ const PostDetails = () => {
         </p>
       </div>
 
-      {/* Photo Gallery Section */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xl sm:text-2xl font-bold font-display text-slate-900 tracking-tight">
-            Documented Photographs ({post.photos?.length || 0})
-          </h2>
-          <span className="text-xs text-slate-600">
-            Click any photograph to view high-resolution lightbox
-          </span>
-        </div>
+      {/* Video Recordings Section */}
+      {post.videos && post.videos.length > 0 && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl sm:text-2xl font-bold font-display text-slate-900 tracking-tight flex items-center gap-2">
+              <Film className="w-5 h-5 text-indigo-600" />
+              Documented Video Recordings ({post.videos.length})
+            </h2>
+            <span className="text-xs text-slate-600">
+              Interactive video clips & recordings
+            </span>
+          </div>
 
-        <PhotoGallery photos={post.photos} title={post.title} />
-      </div>
+          <div className={`grid gap-4 ${post.videos.length === 1 ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2'}`}>
+            {post.videos.map((vid, idx) => (
+              <VideoPlayer key={idx} video={vid} index={idx} title={post.title} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Photo Gallery Section */}
+      {post.photos && post.photos.length > 0 && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl sm:text-2xl font-bold font-display text-slate-900 tracking-tight flex items-center gap-2">
+              <Camera className="w-5 h-5 text-brand-600" />
+              Documented Photographs ({post.photos.length})
+            </h2>
+            <span className="text-xs text-slate-600">
+              Click any photograph to view high-resolution lightbox
+            </span>
+          </div>
+
+          <PhotoGallery photos={post.photos} title={post.title} />
+        </div>
+      )}
+
+      {/* Text-only record badge if neither photos nor videos */}
+      {(!post.photos || post.photos.length === 0) && (!post.videos || post.videos.length === 0) && (
+        <div className="p-8 text-center bg-slate-50 border border-slate-200 rounded-2xl text-slate-500 space-y-1">
+          <FileText className="w-8 h-8 mx-auto text-slate-400 mb-2" />
+          <p className="font-semibold text-slate-700">Official Written Documentation</p>
+          <p className="text-xs text-slate-500">This record is published as textual documentation without attached media.</p>
+        </div>
+      )}
 
       {/* Word Document Report CTA Box */}
       <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-2xl p-6 sm:p-8 flex flex-col sm:flex-row items-center justify-between gap-6">

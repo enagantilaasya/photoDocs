@@ -54,22 +54,33 @@ const apiLimiter = rateLimit({
 });
 app.use('/api', apiLimiter);
 
-// Body parsers
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+// Body parsers with generous limit for media uploads
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Serve local upload files statically with CORS headers
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Resilient fallback for /uploads/:filename if ephemeral container disk was recycled
 const ImageFile = require('./models/ImageFile');
+const VideoFile = require('./models/VideoFile');
 app.get('/uploads/:filename', async (req, res) => {
   try {
-    const imageDoc = await ImageFile.findOne({ filename: req.params.filename });
+    const filename = req.params.filename;
+    // Check ImageFile first
+    const imageDoc = await ImageFile.findOne({ filename });
     if (imageDoc) {
       res.setHeader('Content-Type', imageDoc.contentType || 'image/jpeg');
       res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
       return res.send(imageDoc.data);
+    }
+    // Check VideoFile
+    const videoDoc = await VideoFile.findOne({ filename });
+    if (videoDoc) {
+      res.setHeader('Content-Type', videoDoc.contentType || 'video/mp4');
+      res.setHeader('Accept-Ranges', 'bytes');
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      return res.send(videoDoc.data);
     }
   } catch (e) {
     // proceed to redirect

@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 const photoSchema = new mongoose.Schema({
   publicId: {
     type: String,
-    required: true
+    default: ''
   },
   url: {
     type: String,
@@ -31,6 +31,33 @@ const photoSchema = new mongoose.Schema({
   }
 });
 
+const videoSchema = new mongoose.Schema({
+  publicId: {
+    type: String,
+    default: ''
+  },
+  url: {
+    type: String,
+    required: true
+  },
+  originalName: {
+    type: String,
+    default: ''
+  },
+  format: {
+    type: String,
+    default: 'mp4'
+  },
+  bytes: {
+    type: Number,
+    default: 0
+  },
+  videoType: {
+    type: String, // 'upload' | 'youtube' | 'vimeo' | 'external'
+    default: 'upload'
+  }
+});
+
 const postSchema = new mongoose.Schema(
   {
     title: {
@@ -46,11 +73,22 @@ const postSchema = new mongoose.Schema(
     },
     photos: {
       type: [photoSchema],
+      default: [],
       validate: {
         validator: function (v) {
-          return Array.isArray(v) && v.length >= 1 && v.length <= 10;
+          return !v || (Array.isArray(v) && v.length <= 10);
         },
-        message: 'A post must contain between 1 and 10 photos.'
+        message: 'A post can contain a maximum of 10 photos.'
+      }
+    },
+    videos: {
+      type: [videoSchema],
+      default: [],
+      validate: {
+        validator: function (v) {
+          return !v || (Array.isArray(v) && v.length <= 5);
+        },
+        message: 'A post can contain a maximum of 5 videos.'
       }
     },
     uploadedBy: {

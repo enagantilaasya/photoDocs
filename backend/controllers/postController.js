@@ -1,14 +1,40 @@
 const Post = require('../models/Post');
 const ImageFile = require('../models/ImageFile');
-const { uploadImageBuffer, deleteImage } = require('../config/cloudinary');
+const VideoFile = require('../models/VideoFile');
+const { uploadImageBuffer, uploadVideoBuffer, deleteImage } = require('../config/cloudinary');
 const { generatePostDocx } = require('../utils/docxGenerator');
 
-// @desc    Create a new photo post
+// Helper to normalize and categorize external video URLs (YouTube, Vimeo, direct MP4)
+const parseVideoUrl = (rawUrl) => {
+  if (!rawUrl || typeof rawUrl !== 'string') return null;
+  const url = rawUrl.trim();
+  if (!url.startsWith('http://') && !url.startsWith('https://')) return null;
+
+  let videoType = 'external';
+  let cleanUrl = url;
+
+  if (url.includes('youtube.com') || url.includes('youtu.be')) {
+    videoType = 'youtube';
+  } else if (url.includes('vimeo.com')) {
+    videoType = 'vimeo';
+  }
+
+  return {
+    publicId: '',
+    url: cleanUrl,
+    originalName: 'Video Stream',
+    format: videoType,
+    bytes: 0,
+    videoType
+  };
+};
+
+// @desc    Create a new photo/video documentation post
 // @route   POST /api/posts
 // @access  Private (Registered User or Admin)
 const createPost = async (req, res) => {
   try {
-    const { title, description, eventDate, date } = req.body;
+    const { title, description, eventDate, date, videoUrls, videoUrl } = req.body;
 
     if (!title || !title.trim()) {
       return res.status(400).json({
@@ -24,31 +50,81 @@ const createPost = async (req, res) => {
       });
     }
 
-    if (!req.files || req.files.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Please upload at least one photograph (up to 10 photos).'
-      });
-    }
-
-    if (req.files.length > 10) {
-      return res.status(400).json({
-        success: false,
-        message: 'A post can contain a maximum of 10 photographs.'
-      });
-    }
-
     // Determine base URL for persistent storage (always HTTPS in production/Render)
     const host = req.get('host') || 'photodocs.onrender.com';
     const isHttps = req.secure || req.headers['x-forwarded-proto'] === 'https' || host.includes('onrender.com');
     const protocol = isHttps ? 'https' : req.protocol;
     const baseUrl = `${protocol}://${host}`;
 
-    // Upload images to Cloudinary (or local fallback)
-    const uploadPromises = req.files.map((file) =>
-      uploadImageBuffer(file.buffer, file, baseUrl)
+    // Separate photos and videos from uploaded files
+    const photoFiles = [];
+    const videoFiles = [];
+
+    if (req.files && req.files.length > 0) {
+      for (const file of req.files) {
+        const mime = (file.mimetype || '').toLowerCase();
+        if (mime.startsWith('video/') || file.fieldname === 'videos' || file.fieldname === 'video') {
+          videoFiles.push(file);
+        } else {
+          photoFiles.push(file);
+        }
+      }
+    }
+
+    if (photoFiles.length > 10) {
+      return res.status(400).json({
+        success: false,
+        message: 'A post can contain a maximum of 10 photographs.'
+      });
+    }
+
+    if (videoFiles.length > 5) {
+      return res.status(400).json({
+        success: false,
+        message: 'A post can contain a maximum of 5 uploaded video clips.'
+      });
+    }
+
+    // Upload photos (if any)
+    const uploadedPhotos = await Promise.all(
+      photoFiles.map((file) => uploadImageBuffer(file.buffer, file, baseUrl))
     );
-    const uploadedPhotos = await Promise.all(uploadPromises);
+
+    // Upload video files (if any)
+    const uploadedVideos = await Promise.all(
+      videoFiles.map((file) => uploadVideoBuffer(file.buffer, file, baseUrl))
+    );
+
+    // Parse external video URLs if provided (e.g. YouTube, Vimeo, direct MP4 links)
+    const externalUrls = [];
+    const rawVideoInputs = [videoUrl, videoUrls].filter(Boolean);
+
+    for (const input of rawVideoInputs) {
+      if (Array.isArray(input)) {
+        input.forEach((u) => {
+          const parsed = parseVideoUrl(u);
+          if (parsed) externalUrls.push(parsed);
+        });
+      } else if (typeof input === 'string') {
+        try {
+          const parsedJson = JSON.parse(input);
+          if (Array.isArray(parsedJson)) {
+            parsedJson.forEach((u) => {
+              const p = parseVideoUrl(u);
+              if (p) externalUrls.push(p);
+            });
+            continue;
+          }
+        } catch (_) {}
+
+        input.split(/[\n,]+/).forEach((u) => {
+          const parsed = parseVideoUrl(u);
+          if (parsed) externalUrls.push(parsed);
+        });
+      }
+    }
+
+    const allVideos = [...uploadedVideos, ...externalUrls].slice(0, 5);
 
     // All posts are directly published and approved
     const initialStatus = 'APPROVED';
@@ -61,6 +137,7 @@ const createPost = async (req, res) => {
       title: title.trim(),
       description: description.trim(),
       photos: uploadedPhotos,
+      videos: allVideos,
       uploadedBy: req.user._id,
       status: initialStatus,
       eventDate: !isNaN(resolvedEventDate.getTime()) ? resolvedEventDate : new Date()
@@ -204,6 +281,53 @@ const serveImage = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: error.message || 'Error serving photo.'
+    });
+  }
+};
+
+// @desc    Stream persistent video from MongoDB Atlas with HTTP 206 Range support
+// @route   GET /api/posts/videos/:id
+// @access  Public
+const serveVideo = async (req, res) => {
+  try {
+    const video = await VideoFile.findById(req.params.id);
+    if (!video) {
+      return res.status(404).json({
+        success: false,
+        message: 'Video not found.'
+      });
+    }
+
+    const videoSize = video.data.length;
+    const range = req.headers.range;
+
+    if (range) {
+      const parts = range.replace(/bytes=/, '').split('-');
+      const start = parseInt(parts[0], 10);
+      const end = parts[1] ? parseInt(parts[1], 10) : videoSize - 1;
+      const chunksize = end - start + 1;
+      const chunk = video.data.slice(start, end + 1);
+
+      res.writeHead(206, {
+        'Content-Range': `bytes ${start}-${end}/${videoSize}`,
+        'Accept-Ranges': 'bytes',
+        'Content-Length': chunksize,
+        'Content-Type': video.contentType || 'video/mp4'
+      });
+      return res.end(chunk);
+    } else {
+      res.writeHead(200, {
+        'Content-Length': videoSize,
+        'Content-Type': video.contentType || 'video/mp4',
+        'Accept-Ranges': 'bytes',
+        'Cache-Control': 'public, max-age=31536000, immutable'
+      });
+      return res.end(video.data);
+    }
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Error streaming video.'
     });
   }
 };
@@ -353,11 +477,18 @@ const deletePost = async (req, res) => {
       });
     }
 
-    // Cleanup images from Cloudinary or local uploads
+    // Cleanup images & videos from Cloudinary, MongoDB Atlas, or local uploads
     if (post.photos && post.photos.length > 0) {
       for (const photo of post.photos) {
         if (photo.publicId) {
           await deleteImage(photo.publicId);
+        }
+      }
+    }
+    if (post.videos && post.videos.length > 0) {
+      for (const video of post.videos) {
+        if (video.publicId) {
+          await deleteImage(video.publicId);
         }
       }
     }
@@ -366,7 +497,7 @@ const deletePost = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: 'Post and its photos have been successfully deleted.'
+      message: 'Post and its media files have been successfully deleted.'
     });
   } catch (error) {
     res.status(500).json({
@@ -423,6 +554,7 @@ module.exports = {
   getPublicPosts,
   getPostById,
   serveImage,
+  serveVideo,
   getMyPosts,
   getUserStats,
   updatePost,

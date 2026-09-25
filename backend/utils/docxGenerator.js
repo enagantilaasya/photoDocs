@@ -262,6 +262,52 @@ const generatePostDocx = async (post, clientBaseUrl = 'http://localhost:5173') =
     }
   }
 
+  // Documented Videos (if any)
+  if (post.videos && post.videos.length > 0) {
+    children.push(
+      new Paragraph({
+        heading: HeadingLevel.HEADING_2,
+        spacing: { before: 200, after: 100 },
+        children: [
+          new TextRun({
+            text: `Documented Video Recordings (${post.videos.length})`,
+            bold: true,
+            size: 24,
+            color: '1E293B'
+          })
+        ]
+      })
+    );
+
+    for (let i = 0; i < post.videos.length; i++) {
+      const vid = post.videos[i];
+      children.push(
+        new Paragraph({
+          spacing: { after: 100 },
+          children: [
+            new TextRun({
+              text: `Video ${i + 1} (${vid.videoType || 'Record'}): `,
+              bold: true,
+              size: 20,
+              color: '334155'
+            }),
+            new ExternalHyperlink({
+              children: [
+                new TextRun({
+                  text: vid.url,
+                  style: 'Hyperlink',
+                  color: '2563EB',
+                  underline: {}
+                })
+              ],
+              link: vid.url
+            })
+          ]
+        })
+      );
+    }
+  }
+
   // Footer & Hyperlink Section as specified in requirements
   children.push(
     new Paragraph({
