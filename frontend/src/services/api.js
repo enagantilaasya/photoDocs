@@ -1,3 +1,5 @@
+import axios from 'axios';
+
 // Automatically connects to Render backend in production or local proxy in development
 const API_BASE_URL =
   import.meta.env.VITE_API_URL ||
