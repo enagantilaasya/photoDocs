@@ -354,7 +354,7 @@ const CreatePost = () => {
                 <span>Uploading to Cloudinary...</span>
               </>
             ) : (
-              <span>Submit for Publication</span>
+              <span>Publish Post</span>
             )}
           </button>
         </div>

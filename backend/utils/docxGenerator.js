@@ -149,14 +149,7 @@ const generatePostDocx = async (post, clientBaseUrl = 'http://localhost:5173') =
     new Paragraph({
       spacing: { after: 200 },
       children: [
-        new TextRun({ text: 'Status: ', bold: true, size: 20, color: '334155' }),
-        new TextRun({
-          text: `${post.status}`,
-          bold: true,
-          size: 20,
-          color: post.status === 'APPROVED' ? '16A34A' : 'D97706'
-        }),
-        new TextRun({ text: `  |  Document ID: ${post._id}`, size: 18, color: '94A3B8' })
+        new TextRun({ text: `Document ID: ${post._id}`, size: 18, color: '94A3B8' })
       ]
     })
   );

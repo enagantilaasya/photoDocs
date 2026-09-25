@@ -55,32 +55,6 @@ const MyPosts = () => {
     }
   };
 
-  const getStatusBadge = (status) => {
-    switch (status) {
-      case 'APPROVED':
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-            <span>APPROVED</span>
-          </span>
-        );
-      case 'REJECTED':
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-800 border border-red-200">
-            <XCircle className="w-3.5 h-3.5 text-red-600" />
-            <span>REJECTED</span>
-          </span>
-        );
-      default:
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 border border-amber-200">
-            <Clock3 className="w-3.5 h-3.5 text-amber-600" />
-            <span>PENDING REVIEW</span>
-          </span>
-        );
-    }
-  };
-
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-8 animate-fadeIn">
       {/* Top Header */}
@@ -90,7 +64,7 @@ const MyPosts = () => {
             My Posts Archive
           </h1>
           <p className="text-slate-600 text-sm mt-1">
-            Manage your personal event documentations, review status, and photo assets.
+            Manage your personal event documentations and photo assets.
           </p>
         </div>
 
@@ -155,11 +129,10 @@ const MyPosts = () => {
 
                 {/* Content Info */}
                 <div className="flex-1 space-y-1.5 min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex items-center">
                     <h3 className="text-lg font-bold font-display text-slate-900 truncate">
                       {post.title}
                     </h3>
-                    {getStatusBadge(post.status)}
                   </div>
 
                   <p className="text-xs sm:text-sm text-slate-600 line-clamp-2 leading-relaxed">
@@ -177,12 +150,6 @@ const MyPosts = () => {
                       {formattedTime}
                     </span>
                   </div>
-
-                  {post.reviewNote && (
-                    <div className="text-xs text-red-600 bg-red-50 p-2 rounded-lg mt-1 border border-red-100">
-                      <strong>Admin Note:</strong> {post.reviewNote}
-                    </div>
-                  )}
                 </div>
 
                 {/* Actions: VIEW, EDIT, DELETE */}

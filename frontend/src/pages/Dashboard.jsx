@@ -157,7 +157,7 @@ const Dashboard = () => {
           Dashboard Statistics
         </h2>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {/* Total Posts */}
           <div className="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-xs">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
@@ -167,7 +167,7 @@ const Dashboard = () => {
               <span className="text-3xl font-extrabold text-slate-900 font-display">
                 {stats.totalPosts}
               </span>
-              <span className="text-xs text-slate-500">entries</span>
+              <span className="text-xs text-slate-500">entries published</span>
             </div>
           </div>
 
@@ -184,36 +184,10 @@ const Dashboard = () => {
             </div>
           </div>
 
-          {/* Approved Posts */}
-          <div className="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-xs">
-            <span className="text-xs font-bold uppercase tracking-wider text-emerald-600 flex items-center gap-1">
-              <CheckCircle2 className="w-3.5 h-3.5" /> Approved
-            </span>
-            <div className="mt-2 flex items-baseline gap-2">
-              <span className="text-3xl font-extrabold text-emerald-600 font-display">
-                {stats.approvedPosts}
-              </span>
-              <span className="text-xs text-slate-500">live</span>
-            </div>
-          </div>
-
-          {/* Pending Posts */}
-          <div className="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-xs">
-            <span className="text-xs font-bold uppercase tracking-wider text-amber-600 flex items-center gap-1">
-              <Clock3 className="w-3.5 h-3.5" /> Pending Review
-            </span>
-            <div className="mt-2 flex items-baseline gap-2">
-              <span className="text-3xl font-extrabold text-amber-600 font-display">
-                {stats.pendingPosts}
-              </span>
-              <span className="text-xs text-slate-500">queued</span>
-            </div>
-          </div>
-
           {/* Latest Upload */}
           <div className="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-xs">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1">
-              <Calendar className="w-3.5 h-3.5 text-slate-400" /> Latest Upload
+              <Calendar className="w-3.5 h-3.5 text-slate-400" /> Latest Activity
             </span>
             <div className="mt-3">
               <span className="text-sm font-bold text-slate-900 block truncate">
@@ -258,17 +232,6 @@ const Dashboard = () => {
                       <Camera className="w-8 h-8" />
                     </div>
                   )}
-                  <span
-                    className={`absolute top-2 right-2 px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                      post.status === 'APPROVED'
-                        ? 'bg-emerald-600 text-white'
-                        : post.status === 'REJECTED'
-                        ? 'bg-red-600 text-white'
-                        : 'bg-amber-500 text-white'
-                    }`}
-                  >
-                    {post.status}
-                  </span>
                 </div>
                 <div className="p-4 flex-1 flex flex-col justify-between">
                   <div>

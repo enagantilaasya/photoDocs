@@ -172,19 +172,7 @@ const PostDetails = () => {
 
       {/* Main Post Header */}
       <div className="space-y-4">
-        {/* Status indicator if pending or rejected */}
-        {post.status !== 'APPROVED' && (
-          <div
-            className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold ${
-              post.status === 'PENDING'
-                ? 'bg-amber-100 text-amber-800 border border-amber-200'
-                : 'bg-red-100 text-red-800 border border-red-200'
-            }`}
-          >
-            <Clock3 className="w-3.5 h-3.5" />
-            <span>Post Status: {post.status}</span>
-          </div>
-        )}
+
 
         {/* Visual Prominent Title/Heading as specified */}
         <h1 className="text-3xl sm:text-5xl font-black font-display text-slate-900 tracking-tight leading-tight">

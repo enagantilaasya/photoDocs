@@ -48,9 +48,8 @@ const createPost = async (req, res) => {
     );
     const uploadedPhotos = await Promise.all(uploadPromises);
 
-    // Initial status is PENDING (Admin can auto-approve or review)
-    // If the creator is an ADMIN, auto-approve for convenience, else PENDING
-    const initialStatus = req.user.role === 'ADMIN' ? 'APPROVED' : 'PENDING';
+    // All posts are directly published and approved
+    const initialStatus = 'APPROVED';
 
     // If user specified a custom event date/time, set eventDate
     const customDateInput = eventDate || date;
@@ -78,10 +77,7 @@ const createPost = async (req, res) => {
 
     res.status(201).json({
       success: true,
-      message:
-        initialStatus === 'APPROVED'
-          ? 'Post created and published directly by Admin.'
-          : 'Post submitted successfully! It is now pending admin approval.',
+      message: 'Post published successfully to the Public Gallery!',
       post: populatedPost
     });
   } catch (error) {
@@ -100,7 +96,7 @@ const getPublicPosts = async (req, res) => {
   try {
     const { search, fromDate, toDate, sort = 'newest', page = 1, limit = 20 } = req.query;
 
-    const query = { status: 'APPROVED' };
+    const query = { status: { $ne: 'REJECTED' } };
 
     // Search query on title and description
     if (search && search.trim()) {
@@ -299,11 +295,6 @@ const updatePost = async (req, res) => {
       }
     }
 
-    // If edited by a regular user, return status to PENDING for re-approval
-    if (!isAdmin) {
-      updateFields.status = 'PENDING';
-    }
-
     const updatedPost = await Post.findByIdAndUpdate(
       req.params.id,
       { $set: updateFields },
@@ -312,9 +303,7 @@ const updatePost = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: !isAdmin
-        ? 'Post updated and resubmitted for admin review.'
-        : 'Post updated successfully.',
+      message: 'Post updated successfully.',
       post: updatedPost
     });
   } catch (error) {
