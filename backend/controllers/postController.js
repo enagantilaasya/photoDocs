@@ -3,6 +3,7 @@ const ImageFile = require('../models/ImageFile');
 const VideoFile = require('../models/VideoFile');
 const { uploadImageBuffer, uploadVideoBuffer, deleteImage } = require('../config/cloudinary');
 const { generatePostDocx } = require('../utils/docxGenerator');
+const { generateUserPostsPdf } = require('../utils/pdfGenerator');
 
 // Helper to normalize and categorize external video URLs (YouTube, Vimeo, direct MP4)
 const parseVideoUrl = (rawUrl) => {
@@ -549,6 +550,37 @@ const downloadPostReport = async (req, res) => {
   }
 };
 
+// @desc    Download complete PDF archive of all posts for the current user
+// @route   GET /api/posts/my-posts/pdf
+// @access  Private
+const exportUserPostsPdf = async (req, res) => {
+  try {
+    const posts = await Post.find({ uploadedBy: req.user._id })
+      .sort({ createdAt: -1 })
+      .populate('uploadedBy', 'fullName email');
+
+    const clientOrigin = req.headers.origin || req.headers.referer
+      ? new URL(req.headers.origin || req.headers.referer).origin
+      : 'https://photodocs.onrender.com';
+
+    const pdfBuffer = await generateUserPostsPdf(posts, req.user, clientOrigin);
+
+    const safeUserName = (req.user.fullName || 'User').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const fileName = `Archive_${safeUserName}_${Date.now()}.pdf`;
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Content-Length', pdfBuffer.length);
+    res.send(pdfBuffer);
+  } catch (error) {
+    console.error('[PDF Export Error]', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error generating PDF archive.'
+    });
+  }
+};
+
 module.exports = {
   createPost,
   getPublicPosts,
@@ -559,5 +591,6 @@ module.exports = {
   getUserStats,
   updatePost,
   deletePost,
-  downloadPostReport
+  downloadPostReport,
+  exportUserPostsPdf
 };

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { fetchMyPosts, deletePostApi } from '../services/api';
+import { fetchMyPosts, deletePostApi, downloadMyPostsPdfApi } from '../services/api';
 import {
   Calendar,
   Clock,
@@ -12,7 +12,8 @@ import {
   Clock3,
   CheckCircle2,
   XCircle,
-  FileText
+  FileText,
+  FileDown
 } from 'lucide-react';
 import { getSafeImageUrl, DEFAULT_PHOTO_PLACEHOLDER } from '../utils/imageUrl';
 
@@ -21,6 +22,18 @@ const MyPosts = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [deletingId, setDeletingId] = useState(null);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
+
+  const handleDownloadPdf = async () => {
+    setDownloadingPdf(true);
+    try {
+      await downloadMyPostsPdfApi();
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to download PDF archive. Please try again.');
+    } finally {
+      setDownloadingPdf(false);
+    }
+  };
 
   const loadPosts = async () => {
     setLoading(true);
@@ -69,13 +82,30 @@ const MyPosts = () => {
           </p>
         </div>
 
-        <Link
-          to="/create-post"
-          className="inline-flex items-center gap-2 px-5 py-2.5 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-sm font-semibold shadow-sm transition-all"
-        >
-          <PlusCircle className="w-4 h-4" />
-          <span>Create New Post</span>
-        </Link>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <button
+            type="button"
+            onClick={handleDownloadPdf}
+            disabled={downloadingPdf || posts.length === 0}
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded-xl text-sm font-bold shadow-xs transition-all disabled:opacity-50"
+            title="Download complete PDF archive of all your posts"
+          >
+            {downloadingPdf ? (
+              <div className="w-4 h-4 border-2 border-red-600 border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <FileDown className="w-4 h-4 text-red-600" />
+            )}
+            <span>{downloadingPdf ? 'Generating PDF...' : 'Download Posts (PDF)'}</span>
+          </button>
+
+          <Link
+            to="/create-post"
+            className="inline-flex items-center gap-2 px-5 py-2.5 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-sm font-semibold shadow-sm transition-all"
+          >
+            <PlusCircle className="w-4 h-4" />
+            <span>Create New Post</span>
+          </Link>
+        </div>
       </div>
 
       {error && (

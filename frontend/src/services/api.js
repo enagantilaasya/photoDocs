@@ -102,6 +102,27 @@ export const getDownloadReportUrl = (postId) => {
   return `${API_BASE_URL}/posts/${postId}/report`;
 };
 
+export const downloadMyPostsPdfApi = async () => {
+  const response = await api.get('/posts/my-posts/pdf', {
+    responseType: 'blob'
+  });
+  const blob = new Blob([response.data], { type: 'application/pdf' });
+  const downloadUrl = window.URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = downloadUrl;
+  link.download = `My_Documentation_Archive_${Date.now()}.pdf`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(downloadUrl);
+  return true;
+};
+
+export const getMyPostsPdfDirectUrl = () => {
+  const token = localStorage.getItem('photo_gallery_token') || '';
+  return `${API_BASE_URL}/posts/my-posts/pdf?token=${encodeURIComponent(token)}`;
+};
+
 /* ================= ADMIN API ================= */
 export const fetchAdminStats = async () => {
   const response = await api.get('/admin/stats');

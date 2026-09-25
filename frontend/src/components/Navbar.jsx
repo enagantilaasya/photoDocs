@@ -11,19 +11,33 @@ import {
   User as UserIcon,
   Menu,
   X,
-  FileText
+  FileText,
+  FileDown
 } from 'lucide-react';
+import { downloadMyPostsPdfApi } from '../services/api';
 
 const Navbar = () => {
   const { user, isAuthenticated, isAdmin, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
 
   const handleLogout = async () => {
     await logout();
     navigate('/');
     setMobileMenuOpen(false);
+  };
+
+  const handleDownloadPdf = async () => {
+    setDownloadingPdf(true);
+    try {
+      await downloadMyPostsPdfApi();
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to download PDF archive. Please try again.');
+    } finally {
+      setDownloadingPdf(false);
+    }
   };
 
   const isActive = (path) => location.pathname === path;
@@ -98,6 +112,20 @@ const Navbar = () => {
                   <PlusCircle className="w-4 h-4 text-brand-600" />
                   Create Post
                 </Link>
+                <button
+                  type="button"
+                  onClick={handleDownloadPdf}
+                  disabled={downloadingPdf}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 transition-all shadow-xs disabled:opacity-50"
+                  title="Download All My Documentation Posts as PDF Archive"
+                >
+                  {downloadingPdf ? (
+                    <div className="w-3.5 h-3.5 border-2 border-red-600 border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <FileDown className="w-3.5 h-3.5 text-red-600" />
+                  )}
+                  <span>{downloadingPdf ? 'Exporting...' : 'PDF Archive'}</span>
+                </button>
                 <Link
                   to="/my-posts"
                   className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-medium transition-colors ${
@@ -224,6 +252,18 @@ const Navbar = () => {
                 <PlusCircle className="w-5 h-5" />
                 Create New Post
               </Link>
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  handleDownloadPdf();
+                }}
+                disabled={downloadingPdf}
+                className="flex items-center gap-2 px-3 py-2 rounded-md text-base font-semibold text-red-700 bg-red-50 hover:bg-red-100 text-left w-full transition-colors"
+              >
+                <FileDown className="w-5 h-5 text-red-600" />
+                <span>{downloadingPdf ? 'Exporting PDF Archive...' : 'Download All Posts (PDF)'}</span>
+              </button>
               <Link
                 to="/my-posts"
                 onClick={() => setMobileMenuOpen(false)}

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { fetchUserStats, fetchMyPosts } from '../services/api';
+import { fetchUserStats, fetchMyPosts, downloadMyPostsPdfApi } from '../services/api';
 import {
   PlusCircle,
   Images,
@@ -15,13 +15,26 @@ import {
   XCircle,
   ArrowRight,
   Sparkles,
-  Camera
+  Camera,
+  FileDown
 } from 'lucide-react';
 import { getSafeImageUrl, DEFAULT_PHOTO_PLACEHOLDER } from '../utils/imageUrl';
 
 const Dashboard = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
+
+  const handleDownloadPdf = async () => {
+    setDownloadingPdf(true);
+    try {
+      await downloadMyPostsPdfApi();
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to download PDF archive. Please try again.');
+    } finally {
+      setDownloadingPdf(false);
+    }
+  };
 
   const [stats, setStats] = useState({
     totalPosts: 0,
@@ -90,6 +103,21 @@ const Dashboard = () => {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={handleDownloadPdf}
+              disabled={downloadingPdf}
+              className="px-4 py-3 rounded-xl bg-red-600/90 hover:bg-red-600 text-white font-bold text-sm shadow-md transition-all flex items-center gap-2 border border-red-500/50 disabled:opacity-50"
+              title="Download complete PDF archive of all your posts"
+            >
+              {downloadingPdf ? (
+                <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+              ) : (
+                <FileDown className="w-4 h-4" />
+              )}
+              <span>{downloadingPdf ? 'Exporting PDF...' : 'Download PDF Archive'}</span>
+            </button>
+
             <Link
               to="/create-post"
               className="px-5 py-3 rounded-xl bg-brand-500 hover:bg-brand-600 text-white font-bold text-sm shadow-md transition-all flex items-center gap-2"
@@ -143,13 +171,24 @@ const Dashboard = () => {
           <span className="text-xs text-slate-500">Explore live posts</span>
         </Link>
 
-        <div className="p-5 bg-white rounded-2xl border border-slate-200/90 shadow-xs group flex flex-col items-center text-center space-y-2">
-          <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
-            <User className="w-5 h-5" />
+        <button
+          type="button"
+          onClick={handleDownloadPdf}
+          disabled={downloadingPdf}
+          className="p-5 bg-white rounded-2xl border border-slate-200/90 shadow-xs hover:border-red-300 hover:shadow-md transition-all group flex flex-col items-center text-center space-y-2 cursor-pointer w-full disabled:opacity-50"
+        >
+          <div className="w-10 h-10 rounded-xl bg-red-50 text-red-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+            {downloadingPdf ? (
+              <div className="w-5 h-5 border-2 border-red-600 border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <FileDown className="w-5 h-5" />
+            )}
           </div>
-          <span className="text-sm font-bold text-slate-800">Profile Details</span>
-          <span className="text-xs text-slate-500 truncate max-w-[140px]">{user?.email}</span>
-        </div>
+          <span className="text-sm font-bold text-slate-800">
+            {downloadingPdf ? 'Exporting PDF...' : 'Download PDF Archive'}
+          </span>
+          <span className="text-xs text-slate-500">All posts & photos in PDF</span>
+        </button>
       </div>
 
       {/* Dashboard Statistics Grid */}

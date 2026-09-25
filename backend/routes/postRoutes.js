@@ -10,7 +10,8 @@ const {
   deletePost,
   downloadPostReport,
   serveImage,
-  serveVideo
+  serveVideo,
+  exportUserPostsPdf
 } = require('../controllers/postController');
 const { protect } = require('../middleware/authMiddleware');
 const { uploadMedia } = require('../middleware/uploadMiddleware');
@@ -20,6 +21,7 @@ router.get('/', getPublicPosts);
 
 // User-specific dashboard stats & posts
 router.get('/my-posts', protect, getMyPosts);
+router.get('/my-posts/pdf', protect, exportUserPostsPdf);
 router.get('/user-stats', protect, getUserStats);
 
 // Word report download
