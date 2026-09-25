@@ -2,9 +2,9 @@ const mongoose = require('mongoose');
 
 const connectDB = async () => {
   try {
-    const mongoUri = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/photo_gallery';
+    const mongoUri = process.env.MONGO_URI || 'mongodb+srv://24eg105j17:laasya@cluster0.xyjr3mb.mongodb.net/photo_gallery?retryWrites=true&w=majority';
     const conn = await mongoose.connect(mongoUri, {
-      serverSelectionTimeoutMS: 5000
+      serverSelectionTimeoutMS: 10000
     });
     console.log(`[MongoDB] Connected successfully: ${conn.connection.host}/${conn.connection.name}`);
     return conn;
