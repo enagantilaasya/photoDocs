@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { fetchMyPosts, deletePostApi, downloadMyPostsPdfApi } from '../services/api';
+import { fetchMyPosts, deletePostApi, downloadMyPostsPdfApi, downloadPostPdfApi } from '../services/api';
 import {
   Calendar,
   Clock,
@@ -13,7 +13,8 @@ import {
   CheckCircle2,
   XCircle,
   FileText,
-  FileDown
+  FileDown,
+  Film
 } from 'lucide-react';
 import { getSafeImageUrl, DEFAULT_PHOTO_PLACEHOLDER } from '../utils/imageUrl';
 
@@ -23,15 +24,27 @@ const MyPosts = () => {
   const [error, setError] = useState('');
   const [deletingId, setDeletingId] = useState(null);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [downloadingSingleId, setDownloadingSingleId] = useState(null);
 
   const handleDownloadPdf = async () => {
     setDownloadingPdf(true);
     try {
       await downloadMyPostsPdfApi();
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to download PDF archive. Please try again.');
+      alert(err.message || 'Failed to download PDF archive. Please try again.');
     } finally {
       setDownloadingPdf(false);
+    }
+  };
+
+  const handleDownloadSinglePdf = async (postId, postTitle) => {
+    setDownloadingSingleId(postId);
+    try {
+      await downloadPostPdfApi(postId, postTitle);
+    } catch (err) {
+      alert(err.message || 'Failed to download PDF report. Please try again.');
+    } finally {
+      setDownloadingSingleId(null);
     }
   };
 
@@ -40,7 +53,13 @@ const MyPosts = () => {
     try {
       const res = await fetchMyPosts();
       if (res.success) {
-        setPosts(res.posts || []);
+        // Sort strictly by effective activity date descending
+        const sorted = (res.posts || []).sort((a, b) => {
+          const dateA = new Date(a.eventDate || a.createdAt || 0).getTime();
+          const dateB = new Date(b.eventDate || b.createdAt || 0).getTime();
+          return dateB - dateA;
+        });
+        setPosts(sorted);
       }
     } catch (err) {
       console.error('Error fetching my posts:', err);
@@ -158,9 +177,19 @@ const MyPosts = () => {
                       <Images className="w-6 h-6" />
                     </div>
                   )}
-                  <span className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-black/70 text-white text-[10px] font-bold">
-                    {post.photos?.length || 0} {post.photos?.length === 1 ? 'photo' : 'photos'}
-                  </span>
+                  <div className="absolute bottom-1 right-1 flex items-center gap-1">
+                    {post.photos && post.photos.length > 0 && (
+                      <span className="px-1.5 py-0.5 rounded bg-black/70 text-white text-[10px] font-bold">
+                        {post.photos.length} {post.photos.length === 1 ? 'photo' : 'photos'}
+                      </span>
+                    )}
+                    {post.videos && post.videos.length > 0 && (
+                      <span className="px-1.5 py-0.5 rounded bg-indigo-600/90 text-white text-[10px] font-bold flex items-center gap-0.5">
+                        <Film className="w-2.5 h-2.5" />
+                        {post.videos.length}
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 {/* Content Info */}
@@ -188,8 +217,23 @@ const MyPosts = () => {
                   </div>
                 </div>
 
-                {/* Actions: VIEW, EDIT, DELETE */}
-                <div className="flex items-center gap-2 w-full md:w-auto justify-end border-t md:border-t-0 pt-3 md:pt-0 border-slate-100">
+                {/* Actions: VIEW, PDF, EDIT, DELETE */}
+                <div className="flex flex-wrap items-center gap-2 w-full md:w-auto justify-end border-t md:border-t-0 pt-3 md:pt-0 border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => handleDownloadSinglePdf(post._id, post.title)}
+                    disabled={downloadingSingleId === post._id}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-red-200 text-red-700 bg-red-50 hover:bg-red-100 text-xs font-semibold transition-colors disabled:opacity-50"
+                    title="Export PDF Report"
+                  >
+                    {downloadingSingleId === post._id ? (
+                      <div className="w-3 h-3 border border-red-600 border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <FileDown className="w-3.5 h-3.5" />
+                    )}
+                    <span>PDF</span>
+                  </button>
+
                   <Link
                     to={`/post/${post._id}`}
                     className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-semibold transition-colors"

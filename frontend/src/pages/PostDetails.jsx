@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { fetchPostById, getDownloadReportUrl, deletePostApi } from '../services/api';
+import { fetchPostById, getDownloadReportUrl, deletePostApi, downloadPostPdfApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import PhotoGallery from '../components/PhotoGallery';
 import VideoPlayer from '../components/VideoPlayer';
@@ -10,6 +10,7 @@ import {
   User,
   ArrowLeft,
   FileText,
+  FileDown,
   Share2,
   CheckCircle,
   AlertTriangle,
@@ -30,6 +31,19 @@ const PostDetails = () => {
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
+
+  const handleDownloadPdf = async () => {
+    if (!post) return;
+    setDownloadingPdf(true);
+    try {
+      await downloadPostPdfApi(post._id, post.title);
+    } catch (err) {
+      alert(err.message || 'Failed to download PDF report. Please try again.');
+    } finally {
+      setDownloadingPdf(false);
+    }
+  };
 
   useEffect(() => {
     const loadPost = async () => {
@@ -140,6 +154,22 @@ const PostDetails = () => {
             <span>{copied ? 'Copied URL!' : 'Share Post'}</span>
           </button>
 
+          {/* Download PDF Report (.pdf) */}
+          <button
+            type="button"
+            onClick={handleDownloadPdf}
+            disabled={downloadingPdf}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-semibold shadow-xs transition-colors disabled:opacity-50"
+            title="Generate & download official PDF report"
+          >
+            {downloadingPdf ? (
+              <div className="w-3.5 h-3.5 border-2 border-white/50 border-t-white rounded-full animate-spin" />
+            ) : (
+              <FileDown className="w-3.5 h-3.5" />
+            )}
+            <span>{downloadingPdf ? 'Exporting...' : 'PDF Report (.pdf)'}</span>
+          </button>
+
           {/* Download Word Document (.docx) */}
           <a
             href={getDownloadReportUrl(post._id)}
@@ -148,7 +178,7 @@ const PostDetails = () => {
             title="Generate & download official Word document report"
           >
             <FileText className="w-3.5 h-3.5" />
-            <span>Download Official Report (.docx)</span>
+            <span>Word Report (.docx)</span>
           </a>
 
           {/* Owner / Admin Edit & Delete Actions */}

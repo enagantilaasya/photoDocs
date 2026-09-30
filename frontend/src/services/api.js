@@ -102,20 +102,82 @@ export const getDownloadReportUrl = (postId) => {
   return `${API_BASE_URL}/posts/${postId}/report`;
 };
 
+export const getDownloadPostPdfUrl = (postId) => {
+  return `${API_BASE_URL}/posts/${postId}/pdf`;
+};
+
 export const downloadMyPostsPdfApi = async () => {
-  const response = await api.get('/posts/my-posts/pdf', {
-    responseType: 'blob'
-  });
-  const blob = new Blob([response.data], { type: 'application/pdf' });
-  const downloadUrl = window.URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = downloadUrl;
-  link.download = `My_Documentation_Archive_${Date.now()}.pdf`;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  window.URL.revokeObjectURL(downloadUrl);
-  return true;
+  try {
+    const response = await api.get('/posts/my-posts/pdf', {
+      responseType: 'blob'
+    });
+
+    // If backend returned JSON error disguised as a blob
+    if (response.data && response.data.type === 'application/json') {
+      const text = await response.data.text();
+      const errJson = JSON.parse(text);
+      throw new Error(errJson.message || 'PDF export failed.');
+    }
+
+    const blob = new Blob([response.data], { type: 'application/pdf' });
+    const downloadUrl = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    link.download = `My_Documentation_Archive_${Date.now()}.pdf`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(downloadUrl);
+    return true;
+  } catch (err) {
+    if (err.response && err.response.data instanceof Blob) {
+      try {
+        const text = await err.response.data.text();
+        const errJson = JSON.parse(text);
+        throw new Error(errJson.message || 'PDF export failed.');
+      } catch (inner) {
+        if (inner.message && inner !== err) throw inner;
+      }
+    }
+    throw err;
+  }
+};
+
+export const downloadPostPdfApi = async (postId, postTitle = 'Report') => {
+  try {
+    const response = await api.get(`/posts/${postId}/pdf`, {
+      responseType: 'blob'
+    });
+
+    if (response.data && response.data.type === 'application/json') {
+      const text = await response.data.text();
+      const errJson = JSON.parse(text);
+      throw new Error(errJson.message || 'PDF report export failed.');
+    }
+
+    const safeTitle = (postTitle || 'Report').replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 30);
+    const blob = new Blob([response.data], { type: 'application/pdf' });
+    const downloadUrl = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    link.download = `Report_${safeTitle}_${Date.now()}.pdf`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(downloadUrl);
+    return true;
+  } catch (err) {
+    if (err.response && err.response.data instanceof Blob) {
+      try {
+        const text = await err.response.data.text();
+        const errJson = JSON.parse(text);
+        throw new Error(errJson.message || 'PDF report export failed.');
+      } catch (inner) {
+        if (inner.message && inner !== err) throw inner;
+      }
+    }
+    throw err;
+  }
 };
 
 export const getMyPostsPdfDirectUrl = () => {

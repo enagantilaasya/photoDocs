@@ -189,11 +189,13 @@ const getAdminStats = async (req, res) => {
     const approvedPosts = await Post.countDocuments({ status: 'APPROVED' });
     const rejectedPosts = await Post.countDocuments({ status: 'REJECTED' });
 
-    // Aggregate total photos count
-    const postsWithPhotos = await Post.find({}, 'photos');
+    // Aggregate total photos and videos count
+    const postsWithMedia = await Post.find({}, 'photos videos');
     let totalPhotos = 0;
-    postsWithPhotos.forEach((p) => {
+    let totalVideos = 0;
+    postsWithMedia.forEach((p) => {
       totalPhotos += p.photos ? p.photos.length : 0;
+      totalVideos += p.videos ? p.videos.length : 0;
     });
 
     const latestUploads = await Post.find()
@@ -210,6 +212,7 @@ const getAdminStats = async (req, res) => {
         approvedPosts,
         rejectedPosts,
         totalPhotos,
+        totalVideos,
         latestUploads
       }
     });

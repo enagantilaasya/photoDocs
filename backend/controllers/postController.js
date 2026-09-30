@@ -1,9 +1,12 @@
+const fs = require('fs');
 const Post = require('../models/Post');
 const ImageFile = require('../models/ImageFile');
 const VideoFile = require('../models/VideoFile');
 const { uploadImageBuffer, uploadVideoBuffer, deleteImage } = require('../config/cloudinary');
 const { generatePostDocx } = require('../utils/docxGenerator');
-const { generateUserPostsPdf } = require('../utils/pdfGenerator');
+const { generateUserPostsPdf, generateSinglePostPdf } = require('../utils/pdfGenerator');
+const { getGridFSFileInfo, openGridFSDownloadStream } = require('../utils/gridfs');
+
 
 // Helper to normalize and categorize external video URLs (YouTube, Vimeo, direct MP4)
 const parseVideoUrl = (rawUrl) => {
@@ -88,13 +91,24 @@ const createPost = async (req, res) => {
 
     // Upload photos (if any)
     const uploadedPhotos = await Promise.all(
-      photoFiles.map((file) => uploadImageBuffer(file.buffer, file, baseUrl))
+      photoFiles.map((file) => uploadImageBuffer(file, file, baseUrl))
     );
 
     // Upload video files (if any)
     const uploadedVideos = await Promise.all(
-      videoFiles.map((file) => uploadVideoBuffer(file.buffer, file, baseUrl))
+      videoFiles.map((file) => uploadVideoBuffer(file, file, baseUrl))
     );
+
+    // Clean up temporary files on disk from multer diskStorage
+    if (req.files && req.files.length > 0) {
+      for (const f of req.files) {
+        if (f.path && fs.existsSync(f.path)) {
+          try {
+            await fs.promises.unlink(f.path);
+          } catch (_) {}
+        }
+      }
+    }
 
     // Parse external video URLs if provided (e.g. YouTube, Vimeo, direct MP4 links)
     const externalUrls = [];
@@ -286,45 +300,82 @@ const serveImage = async (req, res) => {
   }
 };
 
-// @desc    Stream persistent video from MongoDB Atlas with HTTP 206 Range support
+// @desc    Stream persistent video from MongoDB GridFS / VideoFile with HTTP 206 Range support
 // @route   GET /api/posts/videos/:id
 // @access  Public
 const serveVideo = async (req, res) => {
   try {
-    const video = await VideoFile.findById(req.params.id);
-    if (!video) {
-      return res.status(404).json({
-        success: false,
-        message: 'Video not found.'
-      });
+    const videoId = req.params.id;
+
+    // 1. Check MongoDB GridFS first (for multi-GB videos)
+    const gridFile = await getGridFSFileInfo(videoId);
+    if (gridFile) {
+      const videoSize = gridFile.length;
+      const range = req.headers.range;
+      const contentType = gridFile.contentType || 'video/mp4';
+
+      if (range) {
+        const parts = range.replace(/bytes=/, '').split('-');
+        const start = parseInt(parts[0], 10);
+        const end = parts[1] ? parseInt(parts[1], 10) : videoSize - 1;
+        const chunkSize = end - start + 1;
+
+        res.writeHead(206, {
+          'Content-Range': `bytes ${start}-${end}/${videoSize}`,
+          'Accept-Ranges': 'bytes',
+          'Content-Length': chunkSize,
+          'Content-Type': contentType
+        });
+
+        const downloadStream = openGridFSDownloadStream(videoId, { start, end: end + 1 });
+        return downloadStream.pipe(res);
+      } else {
+        res.writeHead(200, {
+          'Content-Length': videoSize,
+          'Content-Type': contentType,
+          'Accept-Ranges': 'bytes',
+          'Cache-Control': 'public, max-age=31536000, immutable'
+        });
+        const downloadStream = openGridFSDownloadStream(videoId);
+        return downloadStream.pipe(res);
+      }
     }
 
-    const videoSize = video.data.length;
-    const range = req.headers.range;
+    // 2. Legacy fallback to VideoFile (for existing uploaded videos)
+    const video = await VideoFile.findById(videoId);
+    if (video) {
+      const videoSize = video.data.length;
+      const range = req.headers.range;
 
-    if (range) {
-      const parts = range.replace(/bytes=/, '').split('-');
-      const start = parseInt(parts[0], 10);
-      const end = parts[1] ? parseInt(parts[1], 10) : videoSize - 1;
-      const chunksize = end - start + 1;
-      const chunk = video.data.slice(start, end + 1);
+      if (range) {
+        const parts = range.replace(/bytes=/, '').split('-');
+        const start = parseInt(parts[0], 10);
+        const end = parts[1] ? parseInt(parts[1], 10) : videoSize - 1;
+        const chunksize = end - start + 1;
+        const chunk = video.data.slice(start, end + 1);
 
-      res.writeHead(206, {
-        'Content-Range': `bytes ${start}-${end}/${videoSize}`,
-        'Accept-Ranges': 'bytes',
-        'Content-Length': chunksize,
-        'Content-Type': video.contentType || 'video/mp4'
-      });
-      return res.end(chunk);
-    } else {
-      res.writeHead(200, {
-        'Content-Length': videoSize,
-        'Content-Type': video.contentType || 'video/mp4',
-        'Accept-Ranges': 'bytes',
-        'Cache-Control': 'public, max-age=31536000, immutable'
-      });
-      return res.end(video.data);
+        res.writeHead(206, {
+          'Content-Range': `bytes ${start}-${end}/${videoSize}`,
+          'Accept-Ranges': 'bytes',
+          'Content-Length': chunksize,
+          'Content-Type': video.contentType || 'video/mp4'
+        });
+        return res.end(chunk);
+      } else {
+        res.writeHead(200, {
+          'Content-Length': videoSize,
+          'Content-Type': video.contentType || 'video/mp4',
+          'Accept-Ranges': 'bytes',
+          'Cache-Control': 'public, max-age=31536000, immutable'
+        });
+        return res.end(video.data);
+      }
     }
+
+    return res.status(404).json({
+      success: false,
+      message: 'Video not found.'
+    });
   } catch (error) {
     return res.status(500).json({
       success: false,
@@ -333,14 +384,20 @@ const serveVideo = async (req, res) => {
   }
 };
 
-// @desc    Get current user's posts
+// @desc    Get current user's posts ordered by effective activity/event date
 // @route   GET /api/posts/my-posts
 // @access  Private
 const getMyPosts = async (req, res) => {
   try {
     const posts = await Post.find({ uploadedBy: req.user._id })
-      .sort({ createdAt: -1 })
       .populate('uploadedBy', 'fullName email profileImage');
+
+    // Sort by effective activity/event date descending (eventDate if set, else createdAt)
+    posts.sort((a, b) => {
+      const dateA = new Date(a.eventDate || a.createdAt || 0).getTime();
+      const dateB = new Date(b.eventDate || b.createdAt || 0).getTime();
+      return dateB - dateA;
+    });
 
     res.status(200).json({
       success: true,
@@ -355,33 +412,43 @@ const getMyPosts = async (req, res) => {
   }
 };
 
-// @desc    Get dashboard metrics for current user
+// @desc    Get dashboard metrics for current user (including uploaded videos count & ordered date)
 // @route   GET /api/posts/user-stats
 // @access  Private
 const getUserStats = async (req, res) => {
   try {
-    const userPosts = await Post.find({ uploadedBy: req.user._id }).sort({ createdAt: -1 });
+    const userPosts = await Post.find({ uploadedBy: req.user._id });
+
+    // Sort user posts chronologically by effective date
+    userPosts.sort((a, b) => {
+      const dateA = new Date(a.eventDate || a.createdAt || 0).getTime();
+      const dateB = new Date(b.eventDate || b.createdAt || 0).getTime();
+      return dateB - dateA;
+    });
 
     const totalPosts = userPosts.length;
     let totalPhotos = 0;
+    let totalVideos = 0;
     let approvedPosts = 0;
     let pendingPosts = 0;
     let rejectedPosts = 0;
 
     userPosts.forEach((post) => {
       totalPhotos += post.photos ? post.photos.length : 0;
+      totalVideos += post.videos ? post.videos.length : 0;
       if (post.status === 'APPROVED') approvedPosts++;
       else if (post.status === 'PENDING') pendingPosts++;
       else if (post.status === 'REJECTED') rejectedPosts++;
     });
 
-    const latestUpload = userPosts.length > 0 ? userPosts[0].createdAt : null;
+    const latestUpload = userPosts.length > 0 ? (userPosts[0].eventDate || userPosts[0].createdAt) : null;
 
     res.status(200).json({
       success: true,
       stats: {
         totalPosts,
         totalPhotos,
+        totalVideos,
         approvedPosts,
         pendingPosts,
         rejectedPosts,
@@ -396,7 +463,7 @@ const getUserStats = async (req, res) => {
   }
 };
 
-// @desc    Update post heading or description
+// @desc    Update post heading, description, or event date
 // @route   PUT /api/posts/:id
 // @access  Private (Owner or Admin)
 const updatePost = async (req, res) => {
@@ -556,8 +623,14 @@ const downloadPostReport = async (req, res) => {
 const exportUserPostsPdf = async (req, res) => {
   try {
     const posts = await Post.find({ uploadedBy: req.user._id })
-      .sort({ createdAt: -1 })
-      .populate('uploadedBy', 'fullName email');
+      .populate('uploadedBy', 'fullName email profileImage');
+
+    // Sort by effective date descending
+    posts.sort((a, b) => {
+      const dateA = new Date(a.eventDate || a.createdAt || 0).getTime();
+      const dateB = new Date(b.eventDate || b.createdAt || 0).getTime();
+      return dateB - dateA;
+    });
 
     const clientOrigin = req.headers.origin || req.headers.referer
       ? new URL(req.headers.origin || req.headers.referer).origin
@@ -581,6 +654,46 @@ const exportUserPostsPdf = async (req, res) => {
   }
 };
 
+// @desc    Download official PDF report for a single post
+// @route   GET /api/posts/:id/pdf
+// @access  Public
+const downloadPostPdf = async (req, res) => {
+  try {
+    const post = await Post.findById(req.params.id).populate(
+      'uploadedBy',
+      'fullName email profileImage'
+    );
+
+    if (!post) {
+      return res.status(404).json({
+        success: false,
+        message: 'Post not found.'
+      });
+    }
+
+    const clientOrigin = req.headers.origin || req.headers.referer
+      ? new URL(req.headers.origin || req.headers.referer).origin
+      : 'https://photodocs.onrender.com';
+
+    const author = post.uploadedBy || { fullName: 'Contributor' };
+    const pdfBuffer = await generateSinglePostPdf(post, author, clientOrigin);
+
+    const safeTitle = post.title.replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 40);
+    const fileName = `Report_${safeTitle}_${Date.now()}.pdf`;
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Content-Length', pdfBuffer.length);
+    res.send(pdfBuffer);
+  } catch (error) {
+    console.error('[Single Post PDF Error]', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error generating PDF report.'
+    });
+  }
+};
+
 module.exports = {
   createPost,
   getPublicPosts,
@@ -592,5 +705,6 @@ module.exports = {
   updatePost,
   deletePost,
   downloadPostReport,
-  exportUserPostsPdf
+  exportUserPostsPdf,
+  downloadPostPdf
 };

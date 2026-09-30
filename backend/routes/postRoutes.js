@@ -11,7 +11,8 @@ const {
   downloadPostReport,
   serveImage,
   serveVideo,
-  exportUserPostsPdf
+  exportUserPostsPdf,
+  downloadPostPdf
 } = require('../controllers/postController');
 const { protect } = require('../middleware/authMiddleware');
 const { uploadMedia } = require('../middleware/uploadMiddleware');
@@ -24,8 +25,9 @@ router.get('/my-posts', protect, getMyPosts);
 router.get('/my-posts/pdf', protect, exportUserPostsPdf);
 router.get('/user-stats', protect, getUserStats);
 
-// Word report download
+// Word report & PDF document download for individual post
 router.get('/:id/report', downloadPostReport);
+router.get('/:id/pdf', downloadPostPdf);
 
 // Persistent photo retrieval by ImageFile ID
 router.get('/images/:id', serveImage);

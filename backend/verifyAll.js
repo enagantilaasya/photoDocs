@@ -92,21 +92,34 @@ async function runTests() {
     const isDocx = reportRes.headers['content-type']?.includes('wordprocessingml');
     assert(reportRes.status === 200 && isDocx && reportRes.buffer.length > 1000, `5. Word (.docx) Report generated successfully (${reportRes.buffer.length} bytes)`);
 
-    // 6. Test User Dashboard Stats
+    // 6. Test Single Post PDF Report Generation (.pdf)
+    const singlePdfRes = await request(`/api/posts/${samplePostId}/pdf`);
+    const isSinglePdf = singlePdfRes.headers['content-type']?.includes('application/pdf');
+    assert(singlePdfRes.status === 200 && isSinglePdf && singlePdfRes.buffer.length > 500, `6. Single Post PDF Report generated successfully (${singlePdfRes.buffer.length} bytes)`);
+
+    // 7. Test User PDF Archive Export
+    const pdfArchiveRes = await request('/api/posts/my-posts/pdf', {
+      headers: { Authorization: `Bearer ${userToken}` }
+    });
+    const isArchivePdf = pdfArchiveRes.headers['content-type']?.includes('application/pdf');
+    assert(pdfArchiveRes.status === 200 && isArchivePdf && pdfArchiveRes.buffer.length > 500, `7. Complete User PDF Archive generated successfully (${pdfArchiveRes.buffer.length} bytes)`);
+
+    // 8. Test User Dashboard Stats (including Total Videos)
     const userStats = await request('/api/posts/user-stats', {
       headers: { Authorization: `Bearer ${userToken}` }
     });
-    assert(userStats.status === 200 && userStats.data.stats.totalPosts >= 0, `6. User Dashboard Stats returned: Total=${userStats.data.stats.totalPosts}, Photos=${userStats.data.stats.totalPhotos}`);
+    assert(userStats.status === 200 && userStats.data.stats.totalPosts >= 0 && typeof userStats.data.stats.totalVideos === 'number', `8. User Dashboard Stats returned: Posts=${userStats.data.stats.totalPosts}, Photos=${userStats.data.stats.totalPhotos}, Videos=${userStats.data.stats.totalVideos}`);
 
-    // 7. Test Admin Stats
+    // 9. Test Admin Stats (including Total Videos)
     const adminStats = await request('/api/admin/stats', {
       headers: { Authorization: `Bearer ${adminToken}` }
     });
-    assert(adminStats.status === 200 && adminStats.data.stats.totalUsers >= 2, `7. Admin Metrics Dashboard returned: Users=${adminStats.data.stats.totalUsers}, Posts=${adminStats.data.stats.totalPosts}, Pending=${adminStats.data.stats.pendingPosts}`);
+    assert(adminStats.status === 200 && adminStats.data.stats.totalUsers >= 2 && typeof adminStats.data.stats.totalVideos === 'number', `9. Admin Metrics Dashboard returned: Users=${adminStats.data.stats.totalUsers}, Posts=${adminStats.data.stats.totalPosts}, Photos=${adminStats.data.stats.totalPhotos}, Videos=${adminStats.data.stats.totalVideos}`);
 
-    // 8. Test Search & Filter
-    const searchRes = await request('/api/posts?search=cultural');
-    assert(searchRes.status === 200 && searchRes.data.posts.length > 0, `8. Public Gallery search query ("cultural") returned ${searchRes.data.posts.length} match(es)`);
+    // 10. Test Search & Filter
+    const sampleWord = galleryRes.data.posts[0].title.split(' ')[0] || 'a';
+    const searchRes = await request(`/api/posts?search=${encodeURIComponent(sampleWord)}`);
+    assert(searchRes.status === 200 && searchRes.data.posts.length > 0, `10. Public Gallery search query ("${sampleWord}") returned ${searchRes.data.posts.length} match(es)`);
 
     console.log(`\nResults: ${passed}/${total} Tests Passed Successfully!`);
   } catch (err) {

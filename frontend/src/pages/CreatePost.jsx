@@ -17,9 +17,9 @@ import {
 } from 'lucide-react';
 
 const ALLOWED_PHOTO_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
-const ALLOWED_VIDEO_TYPES = ['video/mp4', 'video/webm', 'video/ogg', 'video/quicktime', 'video/x-matroska', 'video/mpeg'];
+const ALLOWED_VIDEO_TYPES = ['video/mp4', 'video/webm', 'video/ogg', 'video/quicktime', 'video/x-matroska', 'video/mpeg', 'video/avi'];
 const MAX_PHOTO_SIZE = 15 * 1024 * 1024; // 15MB
-const MAX_VIDEO_SIZE = 50 * 1024 * 1024; // 50MB
+const MAX_VIDEO_SIZE = 2 * 1024 * 1024 * 1024; // 2GB
 const MAX_PHOTOS = 10;
 const MAX_VIDEOS = 5;
 
@@ -108,21 +108,26 @@ const CreatePost = () => {
 
     for (const file of newFiles) {
       const type = file.type.toLowerCase();
-      const isAllowed = ALLOWED_VIDEO_TYPES.includes(type) || file.name.match(/\.(mp4|webm|mov|ogg|mkv)$/i);
+      const isAllowed = ALLOWED_VIDEO_TYPES.includes(type) || file.name.match(/\.(mp4|webm|mov|ogg|mkv|avi|3gp)$/i);
 
       if (!isAllowed) {
-        setError(`Invalid video format: ${file.name}. Only MP4, WEBM, MOV, and OGG are supported.`);
+        setError(`Invalid video format: ${file.name}. Only MP4, WEBM, MOV, MKV, and OGG are supported.`);
         return;
       }
       if (file.size > MAX_VIDEO_SIZE) {
-        setError(`Video exceeds 50MB limit: ${file.name} (${(file.size / 1024 / 1024).toFixed(1)}MB)`);
+        const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
+        const sizeGb = (file.size / (1024 * 1024 * 1024)).toFixed(2);
+        const sizeDisplay = file.size >= 1024 * 1024 * 1024 ? `${sizeGb} GB` : `${sizeMb} MB`;
+        setError(`Video exceeds 2GB limit: ${file.name} (${sizeDisplay})`);
         return;
       }
       validNewFiles.push(file);
       newPreviews.push({
         url: URL.createObjectURL(file),
         name: file.name,
-        size: (file.size / (1024 * 1024)).toFixed(2)
+        size: file.size >= 1024 * 1024 * 1024
+          ? `${(file.size / (1024 * 1024 * 1024)).toFixed(2)} GB`
+          : `${(file.size / (1024 * 1024)).toFixed(1)} MB`
       });
     }
 
@@ -444,7 +449,7 @@ const CreatePost = () => {
                   Upload Video Clip
                 </p>
                 <p className="text-xs text-slate-500">
-                  MP4, WEBM, MOV • Max 50MB per clip
+                  MP4, WEBM, MOV, MKV • Up to 2GB per clip
                 </p>
               </div>
             </div>

@@ -16,6 +16,7 @@ import {
   ArrowRight,
   Sparkles,
   Camera,
+  Film,
   FileDown
 } from 'lucide-react';
 import { getSafeImageUrl, DEFAULT_PHOTO_PLACEHOLDER } from '../utils/imageUrl';
@@ -30,7 +31,7 @@ const Dashboard = () => {
     try {
       await downloadMyPostsPdfApi();
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to download PDF archive. Please try again.');
+      alert(err.message || 'Failed to download PDF archive. Please try again.');
     } finally {
       setDownloadingPdf(false);
     }
@@ -39,6 +40,7 @@ const Dashboard = () => {
   const [stats, setStats] = useState({
     totalPosts: 0,
     totalPhotos: 0,
+    totalVideos: 0,
     approvedPosts: 0,
     pendingPosts: 0,
     rejectedPosts: 0,
@@ -59,7 +61,13 @@ const Dashboard = () => {
           setStats(statsRes.stats);
         }
         if (postsRes.success) {
-          setRecentUploads(postsRes.posts?.slice(0, 3) || []);
+          // Sort strictly by effective activity/event date descending
+          const sorted = (postsRes.posts || []).sort((a, b) => {
+            const dateA = new Date(a.eventDate || a.createdAt || 0).getTime();
+            const dateB = new Date(b.eventDate || b.createdAt || 0).getTime();
+            return dateB - dateA;
+          });
+          setRecentUploads(sorted.slice(0, 3));
         }
       } catch (err) {
         console.error('Error fetching dashboard data:', err);
@@ -197,7 +205,7 @@ const Dashboard = () => {
           Dashboard Statistics
         </h2>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {/* Total Posts */}
           <div className="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-xs">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
@@ -207,14 +215,14 @@ const Dashboard = () => {
               <span className="text-3xl font-extrabold text-slate-900 font-display">
                 {stats.totalPosts}
               </span>
-              <span className="text-xs text-slate-500">entries published</span>
+              <span className="text-xs text-slate-500">entries</span>
             </div>
           </div>
 
           {/* Total Photos Uploaded */}
           <div className="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-xs">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
-              Photos Uploaded
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+              <Camera className="w-3.5 h-3.5 text-brand-600" /> Photos Uploaded
             </span>
             <div className="mt-2 flex items-baseline gap-2">
               <span className="text-3xl font-extrabold text-brand-600 font-display">
@@ -224,7 +232,20 @@ const Dashboard = () => {
             </div>
           </div>
 
-          {/* Latest Upload */}
+          {/* Total Videos Uploaded */}
+          <div className="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-xs">
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+              <Film className="w-3.5 h-3.5 text-indigo-600" /> Videos Uploaded
+            </span>
+            <div className="mt-2 flex items-baseline gap-2">
+              <span className="text-3xl font-extrabold text-indigo-600 font-display">
+                {stats.totalVideos || 0}
+              </span>
+              <span className="text-xs text-slate-500">recordings</span>
+            </div>
+          </div>
+
+          {/* Latest Upload / Activity */}
           <div className="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-xs">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1">
               <Calendar className="w-3.5 h-3.5 text-slate-400" /> Latest Activity
@@ -242,7 +263,7 @@ const Dashboard = () => {
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-xl font-bold font-display text-slate-900 tracking-tight">
-            Recent Uploads
+            Recent Uploads (Chronological)
           </h2>
           <Link
             to="/my-posts"
@@ -277,6 +298,22 @@ const Dashboard = () => {
                       <Camera className="w-8 h-8" />
                     </div>
                   )}
+
+                  {/* Media badges overlay */}
+                  <div className="absolute top-2 left-2 flex items-center gap-1.5">
+                    {post.photos && post.photos.length > 0 && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-black/60 backdrop-blur-xs text-white text-[10px] font-bold">
+                        <Camera className="w-3 h-3" />
+                        {post.photos.length}
+                      </span>
+                    )}
+                    {post.videos && post.videos.length > 0 && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-600/90 backdrop-blur-xs text-white text-[10px] font-bold">
+                        <Film className="w-3 h-3" />
+                        {post.videos.length}
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <div className="p-4 flex-1 flex flex-col justify-between">
                   <div>
@@ -288,8 +325,12 @@ const Dashboard = () => {
                     </p>
                   </div>
                   <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
-                    <span className="text-slate-400">
-                      {new Date(post.createdAt).toLocaleDateString()}
+                    <span className="text-slate-500 font-medium">
+                      {new Date(post.eventDate || post.createdAt).toLocaleDateString('en-US', {
+                        day: 'numeric',
+                        month: 'short',
+                        year: 'numeric'
+                      })}
                     </span>
                     <Link
                       to={`/post/${post._id}`}

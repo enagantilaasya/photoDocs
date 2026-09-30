@@ -1,7 +1,33 @@
 const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 
-// Memory storage keeps file buffers in memory for direct storage
-const storage = multer.memoryStorage();
+// Ensure temp upload directory exists
+const tempUploadDir = path.join(__dirname, '..', 'uploads', 'temp');
+if (!fs.existsSync(tempUploadDir)) {
+  try {
+    fs.mkdirSync(tempUploadDir, { recursive: true });
+  } catch (err) {
+    // Ignore in read-only environment
+  }
+}
+
+// Disk storage streams incoming files directly to disk, avoiding RAM explosion for multi-GB uploads
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    if (!fs.existsSync(tempUploadDir)) {
+      try {
+        fs.mkdirSync(tempUploadDir, { recursive: true });
+      } catch (e) {}
+    }
+    cb(null, tempUploadDir);
+  },
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+    cb(null, `upload-${uniqueSuffix}${ext}`);
+  }
+});
 
 // Supported image MIME types
 const ALLOWED_IMAGE_TYPES = [
@@ -9,7 +35,9 @@ const ALLOWED_IMAGE_TYPES = [
   'image/png',
   'image/webp',
   'image/jpg',
-  'image/gif'
+  'image/gif',
+  'image/bmp',
+  'image/svg+xml'
 ];
 
 // Supported video MIME types
@@ -20,26 +48,35 @@ const ALLOWED_VIDEO_TYPES = [
   'video/quicktime',
   'video/x-matroska',
   'video/mpeg',
-  'video/3gpp'
+  'video/3gpp',
+  'video/avi',
+  'video/x-msvideo',
+  'video/x-flv'
 ];
 
 const fileFilter = (req, file, cb) => {
   const mime = (file.mimetype || '').toLowerCase();
-  if (ALLOWED_IMAGE_TYPES.includes(mime) || ALLOWED_VIDEO_TYPES.includes(mime)) {
+  const ext = path.extname(file.originalname || '').toLowerCase();
+  const isVideoExt = ['.mp4', '.webm', '.ogg', '.mov', '.mkv', '.avi', '.3gp', '.flv', '.m4v'].includes(ext);
+  const isImageExt = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.svg'].includes(ext);
+
+  if (ALLOWED_IMAGE_TYPES.includes(mime) || ALLOWED_VIDEO_TYPES.includes(mime) || isVideoExt || isImageExt) {
     cb(null, true);
   } else {
     cb(
-      new Error(`Unsupported file type (${file.mimetype}). Please upload valid image files (JPG, PNG, WEBP, GIF) or video files (MP4, WEBM, MOV, OGG).`),
+      new Error(`Unsupported file type (${file.mimetype || ext}). Please upload valid image files (JPG, PNG, WEBP, GIF) or video files (MP4, WEBM, MOV, MKV, OGG).`),
       false
     );
   }
 };
 
-// Limit 50MB per file, max 15 files
+// Limit 2GB (2,147,483,648 bytes) per file, max 15 files
+const MAX_UPLOAD_SIZE = 2 * 1024 * 1024 * 1024; // 2 Gigabytes
+
 const upload = multer({
   storage,
   limits: {
-    fileSize: 50 * 1024 * 1024, // 50 MB per file
+    fileSize: MAX_UPLOAD_SIZE,
     files: 15
   },
   fileFilter
@@ -55,7 +92,7 @@ const uploadMedia = (req, res, next) => {
       if (err.code === 'LIMIT_FILE_SIZE') {
         return res.status(400).json({
           success: false,
-          message: 'One or more files exceed the 50MB file size limit.'
+          message: 'One or more files exceed the 2GB file size limit. Please upload files under 2GB.'
         });
       }
       if (err.code === 'LIMIT_FILE_COUNT') {
@@ -80,5 +117,7 @@ const uploadMedia = (req, res, next) => {
 
 module.exports = {
   uploadPhotos: uploadMedia,
-  uploadMedia
+  uploadMedia,
+  MAX_UPLOAD_SIZE
 };
+

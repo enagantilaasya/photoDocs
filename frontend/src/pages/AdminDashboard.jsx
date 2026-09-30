@@ -185,7 +185,7 @@ const AdminDashboard = () => {
 
       {/* Metrics Grid */}
       {stats && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-4">
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
             <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
               Total Users
@@ -236,7 +236,16 @@ const AdminDashboard = () => {
               Photos Hosted
             </span>
             <div className="mt-1 text-2xl font-black text-blue-600 font-display">
-              {stats.totalPhotos}
+              {stats.totalPhotos || 0}
+            </div>
+          </div>
+
+          <div className="bg-white p-4 rounded-2xl border border-indigo-200/80 shadow-xs bg-indigo-50/20">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-700">
+              Videos Hosted
+            </span>
+            <div className="mt-1 text-2xl font-black text-indigo-600 font-display">
+              {stats.totalVideos || 0}
             </div>
           </div>
         </div>
