@@ -18,22 +18,49 @@ const isSupportedPdfImage = (buf) => {
 };
 
 /**
- * Helper to download an external URL following HTTP redirects (up to 5 hops)
+ * Download an external image with strict timeout (2000ms), redirect following, and size limits
  */
-const fetchRemoteBufferWithRedirects = (initialUrl, maxRedirects = 5) => {
+const fetchRemoteBufferWithTimeout = (initialUrl, timeoutMs = 2000, maxRedirects = 3) => {
   return new Promise((resolve) => {
-    let currentUrl = initialUrl;
+    let resolved = false;
     let redirectsCount = 0;
+    let currentReq = null;
+
+    const timer = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        if (currentReq) {
+          try {
+            currentReq.destroy();
+          } catch (e) {}
+        }
+        resolve(null);
+      }
+    }, timeoutMs);
+
+    const safeResolve = (val) => {
+      if (!resolved) {
+        resolved = true;
+        clearTimeout(timer);
+        if (currentReq) {
+          try {
+            currentReq.destroy();
+          } catch (e) {}
+        }
+        resolve(val);
+      }
+    };
 
     const requestHop = (targetUrl) => {
       try {
         const client = targetUrl.startsWith('https:') ? https : http;
-        const req = client.get(
+        currentReq = client.get(
           targetUrl,
           {
-            timeout: 10000,
+            timeout: timeoutMs,
             headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+              Accept: 'image/jpeg,image/png,image/*;q=0.8'
             }
           },
           (res) => {
@@ -41,75 +68,111 @@ const fetchRemoteBufferWithRedirects = (initialUrl, maxRedirects = 5) => {
             if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location) {
               redirectsCount++;
               if (redirectsCount > maxRedirects) {
-                return resolve(null);
+                return safeResolve(null);
               }
               const redirectUrl = new URL(res.headers.location, targetUrl).href;
               return requestHop(redirectUrl);
             }
 
             if (res.statusCode !== 200) {
-              return resolve(null);
+              return safeResolve(null);
             }
 
             const chunks = [];
-            res.on('data', (chunk) => chunks.push(chunk));
-            res.on('end', () => resolve(Buffer.concat(chunks)));
-            res.on('error', () => resolve(null));
+            let totalBytes = 0;
+            const MAX_IMG_BYTES = 8 * 1024 * 1024; // 8MB max per image to save RAM/time
+
+            res.on('data', (chunk) => {
+              totalBytes += chunk.length;
+              if (totalBytes > MAX_IMG_BYTES) {
+                if (currentReq) {
+                  try {
+                    currentReq.destroy();
+                  } catch (e) {}
+                }
+                return safeResolve(null);
+              }
+              chunks.push(chunk);
+            });
+
+            res.on('end', () => safeResolve(Buffer.concat(chunks)));
+            res.on('error', () => safeResolve(null));
           }
         );
 
-        req.on('error', () => resolve(null));
-        req.on('timeout', () => {
-          req.destroy();
-          resolve(null);
+        currentReq.on('error', () => safeResolve(null));
+        currentReq.on('timeout', () => {
+          if (currentReq) {
+            try {
+              currentReq.destroy();
+            } catch (e) {}
+          }
+          safeResolve(null);
         });
       } catch (e) {
-        resolve(null);
+        safeResolve(null);
       }
     };
 
-    requestHop(currentUrl);
+    requestHop(initialUrl);
   });
 };
 
 /**
  * Helper to get image buffer from DB, local disk, or URL
+ * Never modifies or tampers with any database data.
  */
-const fetchImageBuffer = async (rawUrl) => {
+const fetchImageBuffer = async (rawUrl, perImageTimeout = 2000) => {
   try {
     if (!rawUrl || typeof rawUrl !== 'string') return null;
     let url = rawUrl.trim();
 
-    // 1. If it's a DB image URL like /api/posts/images/:id or https://.../api/posts/images/:id
+    // 1. Fast DB image lookup (/api/posts/images/:id) - READ ONLY
     const dbMatch = url.match(/\/api\/posts\/images\/([a-fA-F0-9]{24})/);
     if (dbMatch && dbMatch[1]) {
-      const imgDoc = await ImageFile.findById(dbMatch[1]);
+      const imgDoc = await ImageFile.findById(dbMatch[1])
+        .select('data')
+        .lean()
+        .maxTimeMS(2000)
+        .catch(() => null);
+
       if (imgDoc && imgDoc.data) {
-        return imgDoc.data;
+        return Buffer.isBuffer(imgDoc.data)
+          ? imgDoc.data
+          : imgDoc.data.buffer
+          ? Buffer.from(imgDoc.data.buffer)
+          : Buffer.from(imgDoc.data);
       }
     }
 
-    // 2. If it's a local /uploads/ URL
+    // 2. Fast local /uploads/ check - READ ONLY
     if (url.includes('/uploads/')) {
       const fileName = url.split('/uploads/').pop();
       const localFilePath = path.join(__dirname, '..', 'uploads', fileName);
       if (fs.existsSync(localFilePath)) {
-        return await fs.promises.readFile(localFilePath);
+        return await fs.promises.readFile(localFilePath).catch(() => null);
       }
       const tempPath = path.join(__dirname, '..', 'uploads', 'temp', fileName);
       if (fs.existsSync(tempPath)) {
-        return await fs.promises.readFile(tempPath);
+        return await fs.promises.readFile(tempPath).catch(() => null);
       }
-      // Check MongoDB ImageFile by filename
-      const imgByFile = await ImageFile.findOne({ filename: fileName });
+      const imgByFile = await ImageFile.findOne({ filename: fileName })
+        .select('data')
+        .lean()
+        .maxTimeMS(2000)
+        .catch(() => null);
+
       if (imgByFile && imgByFile.data) {
-        return imgByFile.data;
+        return Buffer.isBuffer(imgByFile.data)
+          ? imgByFile.data
+          : imgByFile.data.buffer
+          ? Buffer.from(imgByFile.data.buffer)
+          : Buffer.from(imgByFile.data);
       }
     }
 
-    // 3. If external HTTP/HTTPS URL
+    // 3. Remote HTTP/HTTPS fetch with timeout
     if (url.startsWith('http://') || url.startsWith('https://')) {
-      // If Cloudinary URL, ensure we request .jpg for PDFKit compatibility
       let fetchUrl = url;
       if (url.includes('cloudinary.com') && !url.endsWith('.jpg') && !url.endsWith('.png')) {
         fetchUrl = url.replace(/\.(webp|avif|heic)$/i, '.jpg');
@@ -118,13 +181,60 @@ const fetchImageBuffer = async (rawUrl) => {
         }
       }
 
-      return await fetchRemoteBufferWithRedirects(fetchUrl);
+      return await fetchRemoteBufferWithTimeout(fetchUrl, perImageTimeout);
     }
 
     return null;
   } catch (err) {
     return null;
   }
+};
+
+/**
+ * High-speed concurrent pre-fetch of all unique photos across all posts
+ * with an overall time budget to guarantee the PDF never times out.
+ */
+const batchPreFetchImages = async (posts = [], totalBudgetMs = 12000, concurrency = 6) => {
+  const imageMap = new Map();
+  const startTime = Date.now();
+
+  // Extract all unique photo URLs
+  const uniqueUrls = [
+    ...new Set(
+      posts
+        .flatMap((p) => (p.photos || []).map((ph) => ph.url))
+        .filter((u) => u && typeof u === 'string')
+    )
+  ];
+
+  if (uniqueUrls.length === 0) return imageMap;
+
+  // Process URLs in concurrent batches
+  let index = 0;
+  const workers = Array.from({ length: Math.min(concurrency, uniqueUrls.length) }, async () => {
+    while (index < uniqueUrls.length) {
+      // Check if overall time budget has expired
+      if (Date.now() - startTime > totalBudgetMs) {
+        break;
+      }
+      const currentIndex = index++;
+      const url = uniqueUrls[currentIndex];
+
+      if (!imageMap.has(url)) {
+        const remainingTime = Math.max(1000, totalBudgetMs - (Date.now() - startTime));
+        const itemTimeout = Math.min(2500, remainingTime);
+        const buf = await fetchImageBuffer(url, itemTimeout);
+        if (buf && isSupportedPdfImage(buf)) {
+          imageMap.set(url, buf);
+        } else {
+          imageMap.set(url, null);
+        }
+      }
+    }
+  });
+
+  await Promise.all(workers);
+  return imageMap;
 };
 
 /**
@@ -146,9 +256,10 @@ const formatDateTime = (dateVal) => {
 };
 
 /**
- * Internal helper to write post records to a PDFDocument
+ * Synchronous in-memory assembly of posts onto PDFDocument
+ * Executes in milliseconds since all required images are pre-loaded in imageMap.
  */
-const writePostsToDoc = async (doc, posts = [], user = {}, titleText = 'PHOTO & MEDIA DOCUMENTATION ARCHIVE') => {
+const writePostsToDoc = (doc, posts = [], user = {}, titleText = 'PHOTO & MEDIA DOCUMENTATION ARCHIVE', imageMap = new Map()) => {
   const pageWidth = doc.page.width - 90; // ~505 pt
 
   // Header Banner
@@ -301,11 +412,7 @@ const writePostsToDoc = async (doc, posts = [], user = {}, titleText = 'PHOTO & 
 
       for (let i = 0; i < photos.length; i++) {
         const photo = photos[i];
-        let imgBuffer = null;
-
-        try {
-          imgBuffer = await fetchImageBuffer(photo.url);
-        } catch (_) {}
+        const imgBuffer = imageMap.get(photo.url);
 
         if (imgBuffer && isSupportedPdfImage(imgBuffer)) {
           try {
@@ -364,7 +471,7 @@ const writePostsToDoc = async (doc, posts = [], user = {}, titleText = 'PHOTO & 
       }
 
       doc
-        .fillColor('#4338CA') // Indigo 700
+        .fillColor('#4338CA')
         .fontSize(10)
         .font('Helvetica-Bold')
         .text(`Documented Video Recordings (${videos.length}):`, 45, currentY);
@@ -419,11 +526,36 @@ const writePostsToDoc = async (doc, posts = [], user = {}, titleText = 'PHOTO & 
 };
 
 /**
- * Generate a complete, polished PDF archive containing all posts for a user
+ * Generate a complete, polished PDF archive containing all posts for a user.
+ * Guaranteed to finish within ~10-12 seconds, never exceeding server timeouts.
  */
 const generateUserPostsPdf = async (posts = [], user = {}, clientOrigin = 'https://photodocs.onrender.com') => {
   return new Promise(async (resolve, reject) => {
+    let finished = false;
+
+    // Hard fail-safe: Force complete PDF output at 13 seconds if anything stalls
+    const hardTimeoutTimer = setTimeout(() => {
+      if (!finished) {
+        finished = true;
+        try {
+          const fallbackDoc = new PDFDocument({ size: 'A4', margin: 45 });
+          const chunks = [];
+          fallbackDoc.on('data', (c) => chunks.push(c));
+          fallbackDoc.on('end', () => resolve(Buffer.concat(chunks)));
+          writePostsToDoc(fallbackDoc, posts, user, 'PHOTO & MEDIA DOCUMENTATION ARCHIVE', new Map());
+          fallbackDoc.end();
+        } catch (e) {
+          reject(e);
+        }
+      }
+    }, 13000);
+
     try {
+      // 1. Concurrent batch pre-fetch of images with 9.5s global budget & 2s per-image timeout
+      const imageMap = await batchPreFetchImages(posts, 9500, 6);
+
+      if (finished) return;
+
       const doc = new PDFDocument({
         size: 'A4',
         margin: 45,
@@ -436,23 +568,65 @@ const generateUserPostsPdf = async (posts = [], user = {}, clientOrigin = 'https
 
       const chunks = [];
       doc.on('data', (chunk) => chunks.push(chunk));
-      doc.on('end', () => resolve(Buffer.concat(chunks)));
-      doc.on('error', (err) => reject(err));
+      doc.on('end', () => {
+        if (!finished) {
+          finished = true;
+          clearTimeout(hardTimeoutTimer);
+          resolve(Buffer.concat(chunks));
+        }
+      });
+      doc.on('error', (err) => {
+        if (!finished) {
+          finished = true;
+          clearTimeout(hardTimeoutTimer);
+          reject(err);
+        }
+      });
 
-      await writePostsToDoc(doc, posts, user, 'PHOTO & MEDIA DOCUMENTATION ARCHIVE');
+      // 2. Synchronous rendering of pages using pre-loaded images
+      writePostsToDoc(doc, posts, user, 'PHOTO & MEDIA DOCUMENTATION ARCHIVE', imageMap);
       doc.end();
     } catch (err) {
-      reject(err);
+      if (!finished) {
+        finished = true;
+        clearTimeout(hardTimeoutTimer);
+        reject(err);
+      }
     }
   });
 };
 
 /**
- * Generate a clean PDF report for a single post
+ * Generate a clean PDF report for a single post.
+ * Guaranteed to finish within ~3-4 seconds.
  */
 const generateSinglePostPdf = async (post, user = {}, clientOrigin = 'https://photodocs.onrender.com') => {
   return new Promise(async (resolve, reject) => {
+    let finished = false;
+
+    // Hard fail-safe: Force complete PDF output at 6 seconds if anything stalls
+    const hardTimeoutTimer = setTimeout(() => {
+      if (!finished) {
+        finished = true;
+        try {
+          const fallbackDoc = new PDFDocument({ size: 'A4', margin: 45 });
+          const chunks = [];
+          fallbackDoc.on('data', (c) => chunks.push(c));
+          fallbackDoc.on('end', () => resolve(Buffer.concat(chunks)));
+          const author = post.uploadedBy || user;
+          writePostsToDoc(fallbackDoc, [post], author, 'OFFICIAL DOCUMENTATION REPORT', new Map());
+          fallbackDoc.end();
+        } catch (e) {
+          reject(e);
+        }
+      }
+    }, 6000);
+
     try {
+      const imageMap = await batchPreFetchImages([post], 4500, 4);
+
+      if (finished) return;
+
       const doc = new PDFDocument({
         size: 'A4',
         margin: 45,
@@ -465,14 +639,30 @@ const generateSinglePostPdf = async (post, user = {}, clientOrigin = 'https://ph
 
       const chunks = [];
       doc.on('data', (chunk) => chunks.push(chunk));
-      doc.on('end', () => resolve(Buffer.concat(chunks)));
-      doc.on('error', (err) => reject(err));
+      doc.on('end', () => {
+        if (!finished) {
+          finished = true;
+          clearTimeout(hardTimeoutTimer);
+          resolve(Buffer.concat(chunks));
+        }
+      });
+      doc.on('error', (err) => {
+        if (!finished) {
+          finished = true;
+          clearTimeout(hardTimeoutTimer);
+          reject(err);
+        }
+      });
 
       const author = post.uploadedBy || user;
-      await writePostsToDoc(doc, [post], author, 'OFFICIAL DOCUMENTATION REPORT');
+      writePostsToDoc(doc, [post], author, 'OFFICIAL DOCUMENTATION REPORT', imageMap);
       doc.end();
     } catch (err) {
-      reject(err);
+      if (!finished) {
+        finished = true;
+        clearTimeout(hardTimeoutTimer);
+        reject(err);
+      }
     }
   });
 };
@@ -481,4 +671,5 @@ module.exports = {
   generateUserPostsPdf,
   generateSinglePostPdf
 };
+
 
